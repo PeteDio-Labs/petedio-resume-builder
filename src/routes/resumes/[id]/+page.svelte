@@ -2,7 +2,7 @@
 	import { enhance } from '$app/forms';
 	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
 	import ResumePreview from '$lib/components/ResumePreview.svelte';
-	import { computeAtsScore, lintResume } from '$lib/resume/analyze';
+	import { computeAtsScore, lintResume, hasUsableContent } from '$lib/resume/analyze';
 	import { confirmSubmit, guardUnsavedChanges } from '$lib/guards.svelte';
 	import type { ResumeDocument } from '$lib/resume/schema';
 	import type { PageData } from './$types';
@@ -57,6 +57,7 @@
 	// Section counts drive both the rail nav and the collapsed group headers: a
 	// count is a completeness signal, so an empty section says so rather than
 	// hiding behind a chevron.
+	const anyContent = $derived(hasUsableContent(resume));
 	const counts = $derived({
 		basics: [resume.basics.name, resume.basics.label, resume.basics.email, resume.basics.phone,
 			resume.basics.summary, resume.basics.location?.city].filter((v) => (v ?? '').trim() !== '').length,
@@ -130,14 +131,14 @@
 
 		<nav class="rail-nav">
 			<div class="nav-label">Sections</div>
-			<a href="#sec-basics">Basics <span class="count" class:empty={counts.basics === 0}>{counts.basics}/6</span></a>
-			<a href="#sec-work">Work experience <span class="count" class:empty={counts.work === 0}>{counts.work}</span></a>
-			<a href="#sec-skills">Skills <span class="count" class:empty={counts.skills === 0}>{counts.skills}</span></a>
-			<a href="#sec-education">Education <span class="count" class:empty={counts.education === 0}>{counts.education}</span></a>
-			<a href="#sec-projects">Projects <span class="count" class:empty={counts.projects === 0}>{counts.projects}</span></a>
-			<a href="#sec-stories">Story bank <span class="count" class:empty={counts.stories === 0}>{counts.stories}</span></a>
-			<a href="#sec-letter">Cover letter <span class="count" class:empty={counts.letter === 0}>{counts.letter}</span></a>
-			<a href="#sec-lint">Lint <span class="count" class:empty={false}>{lint.length}</span></a>
+			<a href="#sec-basics">Basics <span class="count" class:empty={anyContent && (counts.basics === 0)}>{counts.basics}/6</span></a>
+			<a href="#sec-work">Work experience <span class="count" class:empty={anyContent && (counts.work === 0)}>{counts.work}</span></a>
+			<a href="#sec-skills">Skills <span class="count" class:empty={anyContent && (counts.skills === 0)}>{counts.skills}</span></a>
+			<a href="#sec-education">Education <span class="count" class:empty={anyContent && (counts.education === 0)}>{counts.education}</span></a>
+			<a href="#sec-projects">Projects <span class="count" class:empty={anyContent && (counts.projects === 0)}>{counts.projects}</span></a>
+			<a href="#sec-stories">Story bank <span class="count" class:empty={anyContent && (counts.stories === 0)}>{counts.stories}</span></a>
+			<a href="#sec-letter">Cover letter <span class="count" class:empty={anyContent && (counts.letter === 0)}>{counts.letter}</span></a>
+			<a href="#sec-lint">Lint <span class="count" class:empty={anyContent && (false)}>{lint.length}</span></a>
 		</nav>
 	</aside>
 

@@ -17,6 +17,7 @@
 		type Story,
 		type StoryTag
 	} from '$lib/resume/schema';
+	import { hasUsableContent } from '$lib/resume/analyze';
 	import KeywordEditor from './KeywordEditor.svelte';
 	import BulletList from './BulletList.svelte';
 
@@ -48,6 +49,13 @@
 		projects: expandAll,
 		stories: expandAll
 	});
+
+	/**
+	 * An empty section only means something once the profile has content. On a
+	 * brand-new profile every count is zero, and amber-ing all seven turns a
+	 * completeness signal into wallpaper.
+	 */
+	const anyContent = $derived(hasUsableContent(profile));
 
 	const filledBasics = $derived(
 		[
@@ -88,7 +96,7 @@
 <div class="stack">
 	<!-- Basics -->
 	<details class="group" id="sec-basics" bind:open={open.basics}>
-		<summary><h2>Basics</h2><span class="count" class:empty={filledBasics === 0}>{filledBasics}/6</span></summary>
+		<summary><h2>Basics</h2><span class="count" class:empty={anyContent && (filledBasics === 0)}>{filledBasics}/6</span></summary>
 		<div class="group-body">
 		<div class="grid-2">
 			<label class="field"><span class="field-label">Name</span>
@@ -147,7 +155,7 @@
 
 	<!-- Work -->
 	<details class="group" id="sec-work" bind:open={open.work}>
-		<summary><h2>Work experience</h2><span class="count" class:empty={profile.work.length === 0}>{profile.work.length}</span></summary>
+		<summary><h2>Work experience</h2><span class="count" class:empty={anyContent && (profile.work.length === 0)}>{profile.work.length}</span></summary>
 		<div class="group-body">
 		{#each profile.work as w, i (w)}
 			<div class="entry">
@@ -177,7 +185,7 @@
 
 	<!-- Education -->
 	<details class="group" id="sec-education" bind:open={open.education}>
-		<summary><h2>Education</h2><span class="count" class:empty={profile.education.length === 0}>{profile.education.length}</span></summary>
+		<summary><h2>Education</h2><span class="count" class:empty={anyContent && (profile.education.length === 0)}>{profile.education.length}</span></summary>
 		<div class="group-body">
 		{#each profile.education as e, i (e)}
 			<div class="entry">
@@ -202,7 +210,7 @@
 
 	<!-- Skills -->
 	<details class="group" id="sec-skills" bind:open={open.skills}>
-		<summary><h2>Skills</h2><span class="count" class:empty={profile.skills.length === 0}>{profile.skills.length}</span></summary>
+		<summary><h2>Skills</h2><span class="count" class:empty={anyContent && (profile.skills.length === 0)}>{profile.skills.length}</span></summary>
 		<div class="group-body">
 		{#each profile.skills as s, i (s)}
 			<div class="entry">
@@ -220,7 +228,7 @@
 
 	<!-- Certificates -->
 	<details class="group" id="sec-certificates" bind:open={open.certificates}>
-		<summary><h2>Certifications</h2><span class="count" class:empty={profile.certificates.length === 0}>{profile.certificates.length}</span></summary>
+		<summary><h2>Certifications</h2><span class="count" class:empty={anyContent && (profile.certificates.length === 0)}>{profile.certificates.length}</span></summary>
 		<div class="group-body">
 		{#each profile.certificates as c, i (c)}
 			<div class="entry">
@@ -242,7 +250,7 @@
 
 	<!-- Projects -->
 	<details class="group" id="sec-projects" bind:open={open.projects}>
-		<summary><h2>Projects</h2><span class="count" class:empty={profile.projects.length === 0}>{profile.projects.length}</span></summary>
+		<summary><h2>Projects</h2><span class="count" class:empty={anyContent && (profile.projects.length === 0)}>{profile.projects.length}</span></summary>
 		<div class="group-body">
 		{#each profile.projects as p, i (p)}
 			<div class="entry">
@@ -266,7 +274,7 @@
 
 	<!-- Story bank -->
 	<details class="group" id="sec-stories" bind:open={open.stories}>
-		<summary><h2>Story bank</h2><span class="count" class:empty={(profile.x_petedio.stories?.length ?? 0) === 0}>{profile.x_petedio.stories?.length ?? 0}</span></summary>
+		<summary><h2>Story bank</h2><span class="count" class:empty={anyContent && ((profile.x_petedio.stories?.length ?? 0) === 0)}>{profile.x_petedio.stories?.length ?? 0}</span></summary>
 		<div class="group-body">
 		<p class="muted" style="margin-top:-0.4rem">
 			Reusable STAR anecdotes — these power application Q&amp;A answers later. Aim for 4–6, tagged so

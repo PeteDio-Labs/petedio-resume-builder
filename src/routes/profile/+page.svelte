@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { hasUsableContent } from '$lib/resume/analyze';
 	import { enhance } from '$app/forms';
 	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
 	import { confirmSubmit, guardUnsavedChanges } from '$lib/guards.svelte';
@@ -16,6 +17,7 @@
 	let status = $state<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
 	// Mirrors the rail on the resume screen: counts are the completeness signal.
+	const anyContent = $derived(hasUsableContent(profile));
 	const counts = $derived({
 		basics: [profile.basics.name, profile.basics.label, profile.basics.email, profile.basics.phone,
 			profile.basics.summary, profile.basics.location?.city].filter((v) => (v ?? '').trim() !== '').length,
@@ -49,13 +51,13 @@
 		</div>
 		<nav class="rail-nav">
 			<div class="nav-label">Sections</div>
-			<a href="#sec-basics">Basics <span class="count" class:empty={counts.basics === 0}>{counts.basics}/6</span></a>
-			<a href="#sec-work">Work experience <span class="count" class:empty={counts.work === 0}>{counts.work}</span></a>
-			<a href="#sec-education">Education <span class="count" class:empty={counts.education === 0}>{counts.education}</span></a>
-			<a href="#sec-skills">Skills <span class="count" class:empty={counts.skills === 0}>{counts.skills}</span></a>
-			<a href="#sec-certificates">Certifications <span class="count" class:empty={counts.certificates === 0}>{counts.certificates}</span></a>
-			<a href="#sec-projects">Projects <span class="count" class:empty={counts.projects === 0}>{counts.projects}</span></a>
-			<a href="#sec-stories">Story bank <span class="count" class:empty={counts.stories === 0}>{counts.stories}</span></a>
+			<a href="#sec-basics">Basics <span class="count" class:empty={anyContent && (counts.basics === 0)}>{counts.basics}/6</span></a>
+			<a href="#sec-work">Work experience <span class="count" class:empty={anyContent && (counts.work === 0)}>{counts.work}</span></a>
+			<a href="#sec-education">Education <span class="count" class:empty={anyContent && (counts.education === 0)}>{counts.education}</span></a>
+			<a href="#sec-skills">Skills <span class="count" class:empty={anyContent && (counts.skills === 0)}>{counts.skills}</span></a>
+			<a href="#sec-certificates">Certifications <span class="count" class:empty={anyContent && (counts.certificates === 0)}>{counts.certificates}</span></a>
+			<a href="#sec-projects">Projects <span class="count" class:empty={anyContent && (counts.projects === 0)}>{counts.projects}</span></a>
+			<a href="#sec-stories">Story bank <span class="count" class:empty={anyContent && (counts.stories === 0)}>{counts.stories}</span></a>
 		</nav>
 		<a href="/profile/import" class="btn" style="justify-content:center">Import from a resume</a>
 	</aside>
