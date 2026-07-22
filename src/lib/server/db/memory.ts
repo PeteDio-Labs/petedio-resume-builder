@@ -15,7 +15,7 @@
  */
 import type { Db } from 'mongodb';
 import { allowedUsers, demoUser } from '../config';
-import { sampleProfile } from '../demo/sample-profile';
+import { buildDemoSeed } from '../demo/seed';
 
 type Doc = Record<string, unknown>;
 
@@ -96,18 +96,25 @@ export function createInMemoryDb(): Db {
 }
 
 /**
- * Seed a synthetic master profile for each given email that doesn't already
- * have one. Idempotent, so re-seeding is safe. Emails are lowercased to match
- * the repository's scoping.
+ * Seed a fully-populated synthetic workspace (master profile + tailored resumes
+ * with revisions + a pipeline of tracked jobs) for each given email that isn't
+ * already seeded, so demo mode opens with real content instead of empty states.
+ * Idempotent — presence of a profile means "already seeded". Emails are
+ * lowercased to match the repository's scoping.
  */
-export async function seedDemoProfiles(db: Db, emails: string[]): Promise<void> {
-	const col = db.collection('profiles');
+export async function seedDemoData(db: Db, emails: string[]): Promise<void> {
+	const profiles = db.collection('profiles');
 	const now = new Date();
 	const unique = [...new Set(emails.map((e) => e.toLowerCase()).filter(Boolean))];
+
 	for (const userEmail of unique) {
-		const existing = await col.findOne({ userEmail });
-		if (existing) continue;
-		await col.insertOne({ ...sampleProfile(), userEmail, createdAt: now, updatedAt: now });
+		if (await profiles.findOne({ userEmail })) continue;
+
+		const seed = buildDemoSeed(userEmail);
+		await profiles.insertOne({ ...seed.profile, userEmail, createdAt: now, updatedAt: now });
+		for (const r of seed.resumes) await db.collection('resumes').insertOne(r);
+		for (const rev of seed.revisions) await db.collection('resume_revisions').insertOne(rev);
+		for (const a of seed.applications) await db.collection('applications').insertOne(a);
 	}
 }
 
@@ -121,7 +128,7 @@ let memoryDb: Db | undefined;
 export async function getMemoryDb(): Promise<Db> {
 	if (!memoryDb) {
 		const db = createInMemoryDb();
-		await seedDemoProfiles(db, [...allowedUsers(), demoUser()]);
+		await seedDemoData(db, [...allowedUsers(), demoUser()]);
 		memoryDb = db;
 	}
 	return memoryDb;
