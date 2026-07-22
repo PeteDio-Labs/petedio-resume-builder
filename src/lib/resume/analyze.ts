@@ -51,6 +51,24 @@ export function evidenceText(doc: ResumeDocument): string {
 	return parts.join(' \n ').toLowerCase();
 }
 
+/**
+ * Does this document have anything to build a resume from?
+ *
+ * "The profile row exists" is not the same as "the profile has content" — the
+ * tailoring guard checked only the former, so an empty profile produced a
+ * resume marked "tailored" with zero entries: a document that looks finished
+ * and says nothing.
+ */
+export function hasUsableContent(doc: ResumeDocument): boolean {
+	return (
+		doc.work.length > 0 ||
+		doc.education.length > 0 ||
+		doc.skills.length > 0 ||
+		doc.projects.length > 0 ||
+		(doc.basics.summary ?? '').trim() !== ''
+	);
+}
+
 function escapeRe(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

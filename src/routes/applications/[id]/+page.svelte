@@ -9,6 +9,19 @@
 	let kind = $state<QaKind>('custom');
 	let context = $state('');
 	let targetChars = $state(0);
+
+	// Per-answer editing buffer, keyed by id. Seeded from the server and re-seeded
+	// whenever the server sends a different set (new draft, delete) — but NOT on
+	// every load, or typing would be overwritten by a stale value.
+	let draft = $state<Record<string, string>>({});
+	$effect(() => {
+		for (const entry of data.qa) {
+			if (!(entry.id in draft)) draft[entry.id] = entry.answer;
+		}
+		for (const id of Object.keys(draft)) {
+			if (!data.qa.some((e) => e.id === id)) delete draft[id];
+		}
+	});
 	let asking = $state(false);
 
 	function usePreset(p: { kind: QaKind; question: string }) {
@@ -108,7 +121,11 @@
 					<div class="dim" style="font-size:0.78rem; margin:0.2rem 0 0.5rem">{entry.kind}{entry.storyId ? ' · from a story' : ''}</div>
 					<form method="POST" action="?/saveAnswer" use:enhance>
 						<input type="hidden" name="qaId" value={entry.id} />
-						<textarea name="answer" rows="5">{entry.answer}</textarea>
+						<!-- Bound, not static: the counter below reads this value, and an
+						     uncontrolled textarea left it frozen at the server-rendered
+						     length — misleading on exactly the character-capped forms the
+						     counter exists for. -->
+						<textarea name="answer" rows="5" bind:value={draft[entry.id]}></textarea>
 						<div class="row" style="margin-top:0.5rem">
 							<button type="submit" class="btn">Save edit</button>
 							<button type="button" class="btn-ghost" onclick={(e) => {
@@ -117,7 +134,14 @@
 							}}>Copy</button>
 							<span class="spacer"></span>
 							{#if entry.targetChars > 0}
-								<span class="dim" style="font-size:0.8rem">{entry.answer.length}/{entry.targetChars}</span>
+								<span
+									class="dim"
+									style="font-size:0.8rem; color:{(draft[entry.id] ?? '').length > entry.targetChars
+										? 'var(--red)'
+										: 'var(--label-3)'}"
+								>
+									{(draft[entry.id] ?? '').length}/{entry.targetChars}
+								</span>
 							{/if}
 						</div>
 					</form>

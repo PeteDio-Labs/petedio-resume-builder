@@ -295,7 +295,19 @@ export function answerQuestionDeterministic(input: {
 
 	ans = ans.replace(/\s+/g, ' ').trim();
 	if (input.targetChars && input.targetChars > 0 && ans.length > input.targetChars) {
-		ans = ans.slice(0, input.targetChars - 1).trimEnd() + '…';
+		// Below a usable width, truncation produces "…" or "T…" — punctuation
+		// pretending to be an answer. Return the untruncated text and let the live
+		// counter show it's over; a too-long answer she can cut is worth more than
+		// an ellipsis she can't.
+		const MIN_USEFUL_CHARS = 40;
+		if (input.targetChars >= MIN_USEFUL_CHARS) {
+			// Cut at a word boundary where one is close, so the tail isn't a
+			// half-word.
+			const hard = ans.slice(0, input.targetChars - 1);
+			const lastSpace = hard.lastIndexOf(' ');
+			const body = lastSpace > input.targetChars * 0.6 ? hard.slice(0, lastSpace) : hard;
+			ans = body.trimEnd() + '…';
+		}
 	}
 	return ans;
 }

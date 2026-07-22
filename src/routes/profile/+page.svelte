@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
+	import { confirmSubmit, guardUnsavedChanges } from '$lib/guards.svelte';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -17,6 +18,14 @@
 	const savedLabel = $derived(
 		savedAt ? `Last saved ${new Date(savedAt).toLocaleString()}` : 'Not saved yet'
 	);
+
+	// Dirty tracking is a serialised comparison against the last persisted state —
+	// cheap enough for a document this size, and it can't drift out of sync the
+	// way a manual "touched" flag does.
+	// svelte-ignore state_referenced_locally
+	let baseline = $state(JSON.stringify(data.profile));
+	const dirty = $derived(JSON.stringify(profile) !== baseline);
+	guardUnsavedChanges(() => dirty, 'profile edits');
 </script>
 
 <svelte:head><title>Master profile · Resume Builder</title></svelte:head>
@@ -72,12 +81,14 @@
 						<form
 							method="POST"
 							action="?/restore"
+							use:confirmSubmit={`Restore version ${r.rev}? Your current profile is snapshotted first, but any UNSAVED edits on screen are lost.`}
 							use:enhance={() => {
 								status = null;
 								return async ({ result, update }) => {
 									if (result.type === 'success') {
 										await update({ reset: false });
 										profile = structuredClone(data.profile);
+										baseline = JSON.stringify(profile);
 										status = { kind: 'ok', text: `Restored version ${r.rev}.` };
 									} else if (result.type === 'failure') {
 										status = { kind: 'err', text: (result.data?.message as string) ?? 'Restore failed.' };
@@ -105,6 +116,7 @@
 				saving = false;
 				if (result.type === 'success') {
 					savedAt = (result.data?.updatedAt as string) ?? savedAt;
+					baseline = JSON.stringify(profile);
 					status = { kind: 'ok', text: 'Saved' };
 				} else if (result.type === 'failure') {
 					status = { kind: 'err', text: (result.data?.message as string) ?? 'Save failed.' };

@@ -3,6 +3,7 @@
 	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
 	import ResumePreview from '$lib/components/ResumePreview.svelte';
 	import { computeAtsScore, lintResume } from '$lib/resume/analyze';
+	import { confirmSubmit, guardUnsavedChanges } from '$lib/guards.svelte';
 	import type { ResumeDocument } from '$lib/resume/schema';
 	import type { PageData } from './$types';
 
@@ -22,6 +23,11 @@
 	let status = $state(data.status);
 	// svelte-ignore state_referenced_locally
 	let template = $state<'A' | 'B'>(data.template);
+
+	// svelte-ignore state_referenced_locally
+	let baseline = $state(JSON.stringify(hydrate(data.resume)));
+	const dirty = $derived(JSON.stringify(resume) !== baseline);
+	guardUnsavedChanges(() => dirty, 'resume edits');
 
 	let whyCompany = $state('');
 	let msg = $state<{ kind: 'ok' | 'err'; text: string } | null>(null);
@@ -125,7 +131,11 @@
 	<!-- Actions -->
 	<div class="card" style="margin-top:1rem">
 		<div class="row" style="flex-wrap:wrap; gap:0.6rem">
-			<form method="POST" action="?/generate" use:enhance={() => {
+			<form method="POST" action="?/generate" use:confirmSubmit={
+				dirty
+					? 'Regenerate from your master profile? Your unsaved edits to this resume will be replaced.'
+					: 'Regenerate this resume from your master profile?'
+			} use:enhance={() => {
 				msg = null;
 				return async ({ result }) => {
 					if (result.type === 'success' && result.data?.resume) {
@@ -224,10 +234,20 @@
 			<button type="submit" class="btn btn-primary">Save resume</button>
 		</form>
 		<span class="spacer"></span>
-		<form method="POST" action="?/softDelete" use:enhance>
+		<form
+			method="POST"
+			action="?/softDelete"
+			use:confirmSubmit={'Archive this resume? It disappears from your list — the data is kept.'}
+			use:enhance
+		>
 			<button type="submit" class="btn-ghost">Archive</button>
 		</form>
-		<form method="POST" action="?/hardDelete" use:enhance>
+		<form
+			method="POST"
+			action="?/hardDelete"
+			use:confirmSubmit={`Permanently delete this resume AND all ${revisions.length} of its saved revisions? This cannot be undone.`}
+			use:enhance
+		>
 			<button type="submit" class="btn-ghost btn-danger">Delete</button>
 		</form>
 	</div>
