@@ -4,6 +4,7 @@ import {
 	answerQuestionDeterministic,
 	coverLetterDeterministic,
 	matchStory,
+	pickDistinctKeywords,
 	recommendReuseDeterministic,
 	rewriteBulletDeterministic,
 	tailorResumeDeterministic
@@ -40,6 +41,35 @@ describe('tailorResumeDeterministic', () => {
 		expect(doc.x_petedio.status).toBe('tailored');
 		// original profile is untouched (deep clone)
 		expect(p.basics.label).not.toBe('Platform PM');
+	});
+});
+
+describe('tailoring summary — no repeated keywords (regression)', () => {
+	// The exported PDF read: "Targeting Director of Product at Initech, bringing
+	// platform, product, director product." — "product" three times.
+	const KWS = [KW('platform'), KW('product'), KW('director product'), KW('roadmap'), KW('apis')];
+
+	it('does not repeat words the job title already says', () => {
+		const doc = tailorResumeDeterministic(emptyProfile(), { title: 'Director of Product', company: 'Initech' }, KWS);
+		const summary = doc.basics.summary ?? '';
+		const after = summary.slice(summary.indexOf('bringing'));
+		expect(after).not.toContain('director product');
+		// "Product" appears once — in the title — not again in the keyword list.
+		expect((summary.toLowerCase().match(/product/g) ?? []).length).toBe(1);
+	});
+
+	it('picks distinct, non-overlapping keywords instead', () => {
+		expect(pickDistinctKeywords(KWS, 'Director of Product', 3)).toEqual(['platform', 'roadmap', 'apis']);
+	});
+
+	it('falls back cleanly when every keyword is redundant', () => {
+		const doc = tailorResumeDeterministic(
+			emptyProfile(),
+			{ title: 'Product Manager', company: 'Acme' },
+			[KW('product'), KW('manager'), KW('product manager')]
+		);
+		expect(doc.basics.summary).toBe('Targeting Product Manager at Acme.');
+		expect(doc.basics.summary).not.toContain('bringing');
 	});
 });
 
