@@ -60,3 +60,32 @@ describe('extractKeywordsHeuristic', () => {
 		expect(extractKeywordsHeuristic('   ')).toEqual([]);
 	});
 });
+
+describe('keyword hygiene (UAT)', () => {
+	// Live extraction returned "Level.", "Experience." and "Tooling." as distinct
+	// keywords — sentence-final words with the full stop attached — plus filler
+	// like "Proven" and "Deep". They then read as missing on every resume, since
+	// nobody writes a full stop inside a skill.
+	const JD = `Requirements:
+- 8+ years in infrastructure or platform engineering, including 2+ years at staff level.
+- Deep Terraform and Kubernetes experience. Go or Python for tooling.
+- Proven track record improving reliability.`;
+
+	const terms = () => extractKeywordsHeuristic(JD).map((k) => k.term);
+
+	it('strips sentence-final punctuation from terms', () => {
+		for (const t of terms()) expect(t.endsWith('.')).toBe(false);
+	});
+
+	it('drops resume-speak filler', () => {
+		const t = terms();
+		for (const junk of ['proven', 'deep', 'level', 'experience', 'track', 'record']) {
+			expect(t).not.toContain(junk);
+		}
+	});
+
+	it('still keeps the real skills', () => {
+		const t = terms();
+		for (const kw of ['terraform', 'kubernetes', 'infrastructure']) expect(t).toContain(kw);
+	});
+});

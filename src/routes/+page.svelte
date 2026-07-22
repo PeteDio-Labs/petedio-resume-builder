@@ -58,6 +58,7 @@
 	{/if}
 
 	<p class="dim" style="margin-top:1.5rem; font-size:0.85rem">
-		P2 — master profile &amp; import. Resume tailoring, ATS scoring, and export land in later phases.
+		Master profile, import, JD keyword extraction, tailoring, ATS scoring, cover letters,
+		application Q&amp;A, the job tracker and PDF export are all live.
 	</p>
 </div>

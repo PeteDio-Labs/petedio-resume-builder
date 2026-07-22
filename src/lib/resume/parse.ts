@@ -333,7 +333,10 @@ function splitRoleHeading(rest: string): {
 	}
 
 	const parts = rest
-		.split(/,|—|–|\||\t/)
+		// A SPACED hyphen counts as a separator too ("Helio Data - Senior Engineer"
+		// used to land whole in the position field). Spaced, so hyphenated titles
+		// like "Full-Stack Engineer" stay intact.
+		.split(/,|—|–|\s+-\s+|\||\t/)
 		.map((s) => s.trim())
 		.filter(Boolean);
 

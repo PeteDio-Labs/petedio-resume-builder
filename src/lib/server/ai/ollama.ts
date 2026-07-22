@@ -1,11 +1,17 @@
 /**
  * Ollama-backed AI provider (the real T1+ implementation).
  *
- * Not exercised yet — the inference host isn't provisioned, so createAiProvider()
- * only selects this when OLLAMA_HOST is set (never in demo mode). It's written
- * runtime-neutral (native fetch, Web-standard) and defensively (validate +
- * coerce the model's JSON, fall back to the deterministic heuristic on any
- * failure) so turning it on is a config change, not a rewrite.
+ * Live on resume-242 against the fast lane. createAiProvider() selects this
+ * whenever OLLAMA_HOST is set (never in demo mode). Written runtime-neutral
+ * (native fetch, Web-standard) and defensively: validate + coerce the model's
+ * JSON, and degrade to the deterministic heuristic on any failure — while
+ * reporting WHICH of the two actually produced the answer.
+ *
+ * Latency notes, measured rather than assumed (qwen3.5:4b, GTX 1660 SUPER):
+ *   thinking on, no cap ....... 80s for a one-line prompt  (timed out, always)
+ *   think:false, no cap ....... 16.8s cold / 10.8s warm    (536 output tokens)
+ *   think:false + tight prompt .. 7.7s warm                (300 output tokens)
+ * Which is still slow enough that callers run it as a background job.
  *
  * Env:
  *   OLLAMA_HOST        base URL of the fast lane, e.g. http://192.168.50.12:11435
@@ -29,6 +35,10 @@ const KEYWORDS_SCHEMA = {
 	properties: {
 		keywords: {
 			type: 'array',
+			// Bounded output = bounded latency. Uncapped, the model wrote 536 tokens
+			// (8.0s of generation); capped with a tighter prompt it writes ~300 (4.6s)
+			// and the extra terms were filler anyway.
+			maxItems: 16,
 			items: {
 				type: 'object',
 				properties: {
@@ -75,31 +85,45 @@ export function ollamaAiProvider(): AiProvider {
 						model,
 						stream: false,
 						format: KEYWORDS_SCHEMA,
-						options: { temperature: 0, num_ctx: 8192 },
+						// think:false — qwen3.x reasons before answering by default. Measured
+						// on the fast lane: 80s for a one-line prompt with thinking on, 0.3s
+						// of actual generation with it off. The 30s timeout below was firing
+						// every time, so extraction silently ran the heuristic instead.
+						think: false,
+						// Hold the model in VRAM between requests. Each cold call otherwise
+						// paid 7.7s of load_duration — more than the generation itself.
+						keep_alive: '30m',
+						options: { temperature: 0, num_ctx: 8192, num_predict: 500 },
 						messages: [
 							{
 								role: 'system',
 								content:
-									'Extract ATS keywords from the job description. Return weighted terms (weight 1-100, ' +
-									'higher = more important), kind one of hard|soft|cert|title|edu, and acronym/spelled-out aliases. ' +
+									'Extract the ATS keywords a resume must contain to pass a screen for this job. ' +
+									'At most 16, most important first. weight 1-100 (higher = more important). ' +
+									'kind one of hard|soft|cert|title|edu. aliases ONLY for a well-known acronym/spelled-out ' +
+									'pair (e.g. CI/CD, SRE), otherwise an empty array. Short noun phrases, never sentences. ' +
 									'Only JSON matching the schema.'
 							},
 							{ role: 'user', content: jdText.slice(0, 12_000) }
 						]
 					}),
-					signal: AbortSignal.timeout(30_000)
+					// Generous: this runs in a background job now, so a slow answer costs
+					// nobody a spinner. Cold-loading the model alone can take ~7s.
+					signal: AbortSignal.timeout(60_000)
 				});
 				if (!res.ok) throw new Error(`ollama /api/chat → ${res.status}`);
 				const data = (await res.json()) as { message?: { content?: string } };
 				const parsed = JSON.parse(data.message?.content ?? '{}');
 				const keywords = coerceKeywords(parsed);
 				if (keywords.length === 0) throw new Error('ollama returned no keywords');
-				return { keywords };
+				return { keywords, source: 'ollama' as const };
 			} catch (err) {
 				// Never fail the request over the AI lane — degrade to the deterministic
-				// extractor so the feature still works.
+				// extractor so the feature still works. But SAY SO: this used to report
+				// "Extracted via ollama" while serving heuristic output, which hid a
+				// timeout that had been firing on every single request.
 				console.error('ollamaAiProvider.extractKeywords fell back to heuristic:', err);
-				return { keywords: extractKeywordsHeuristic(jdText) };
+				return { keywords: extractKeywordsHeuristic(jdText), source: 'heuristic' as const };
 			}
 		},
 
