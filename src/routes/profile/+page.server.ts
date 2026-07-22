@@ -1,5 +1,5 @@
 import { fail, redirect } from '@sveltejs/kit';
-import { InvalidProfileError, loadMasterProfile, saveMasterProfile } from '$lib/server/profile';
+import { InvalidProfileError, loadMasterProfile, restoreProfileRevision, saveMasterProfile } from '$lib/server/profile';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals }) => {
@@ -31,5 +31,20 @@ export const actions: Actions = {
 				message: 'Could not save — the database is not reachable yet. Your edits are still here; try again once Mongo is provisioned.'
 			});
 		}
+	},
+
+	restore: async ({ request, locals }) => {
+		if (!locals.user) return fail(401, { message: 'Not signed in.' });
+		const form = await request.formData();
+		const rev = Number(form.get('rev'));
+		if (!Number.isFinite(rev)) return fail(400, { message: 'Bad revision.' });
+		try {
+			const ok = await restoreProfileRevision(locals.user.email, rev);
+			if (!ok) return fail(404, { message: 'That revision no longer exists.' });
+		} catch (err) {
+			console.error('profile restore: DB error', err);
+			return fail(503, { message: 'Could not restore — database not reachable.' });
+		}
+		return { restored: rev };
 	}
 };

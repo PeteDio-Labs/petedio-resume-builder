@@ -39,7 +39,7 @@ export const actions: Actions = {
 		}
 
 		try {
-			await saveMasterProfile(locals.user.email, docJson);
+			await saveMasterProfile(locals.user.email, docJson, 'Replaced by import');
 		} catch (err) {
 			if (err instanceof InvalidProfileError) return fail(400, { message: err.message });
 			console.error('import save: DB error', err);
