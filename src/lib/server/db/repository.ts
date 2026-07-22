@@ -18,7 +18,7 @@
  */
 import type { Db, Document, Filter, OptionalUnlessRequiredId, WithId } from 'mongodb';
 import { resolveDb } from './provider';
-import { newId, type ResumeDocument } from '../../resume/schema';
+import { newId, normalizeProfile, type ResumeDocument } from '../../resume/schema';
 import type { ApplicationStatus, QaEntry } from '../../applications';
 
 /**
@@ -72,6 +72,15 @@ class ScopedCollection<T extends Scoped> {
 	}
 }
 
+/** A past version of the master profile, for undo/restore (UAT H3). */
+export interface ProfileRevisionDoc extends Scoped {
+	id: string;
+	rev: number;
+	doc: ResumeDocument;
+	label: string;
+	savedAt: Date;
+}
+
 /**
  * The master profile is a **singleton per user**, so it gets its own accessor
  * with get/upsert semantics instead of the generic collection shape. Both
@@ -80,11 +89,67 @@ class ScopedCollection<T extends Scoped> {
  */
 class ScopedProfile {
 	private static readonly COLLECTION = 'profiles';
+	private static readonly REVISIONS = 'profile_revisions';
 
 	constructor(
 		private readonly userEmail: string,
 		private readonly getDbFn: DbProvider
 	) {}
+
+	/**
+	 * Snapshot the CURRENT profile before it's overwritten. Deliberately the
+	 * *previous* state, not the new one: the point is to recover from a bad save
+	 * or an import that replaced everything. Without this, one save wiped the
+	 * "everything I've ever done" record with no way back (UAT H3).
+	 */
+	private async snapshotCurrent(label: string): Promise<void> {
+		const db = await this.getDbFn();
+		const current = await db
+			.collection<ProfileDoc>(ScopedProfile.COLLECTION)
+			.findOne({ userEmail: this.userEmail });
+		if (!current) return; // nothing to preserve on first save
+
+		const col = db.collection<ProfileRevisionDoc>(ScopedProfile.REVISIONS);
+		const existing = await col.find({ userEmail: this.userEmail } as Filter<ProfileRevisionDoc>).toArray();
+		const rev = existing.reduce((m, r) => Math.max(m, r.rev), 0) + 1;
+		const { _id, ...doc } = current;
+		void _id;
+		await col.insertOne({
+			id: newId(),
+			userEmail: this.userEmail,
+			rev,
+			doc: normalizeProfile(doc),
+			label,
+			savedAt: new Date()
+		} as OptionalUnlessRequiredId<ProfileRevisionDoc>);
+
+		// Keep the history bounded — the most recent 20 are plenty for undo.
+		const all = await col.find({ userEmail: this.userEmail } as Filter<ProfileRevisionDoc>).toArray();
+		for (const old of all.sort((a, b) => b.rev - a.rev).slice(20)) {
+			await col.deleteOne({ id: old.id, userEmail: this.userEmail } as Filter<ProfileRevisionDoc>);
+		}
+	}
+
+	/** Past versions of the master profile, newest first. */
+	async listRevisions(): Promise<WithId<ProfileRevisionDoc>[]> {
+		const db = await this.getDbFn();
+		const rows = await db
+			.collection<ProfileRevisionDoc>(ScopedProfile.REVISIONS)
+			.find({ userEmail: this.userEmail } as Filter<ProfileRevisionDoc>)
+			.toArray();
+		return rows.sort((a, b) => b.rev - a.rev);
+	}
+
+	/** Restore a past version (snapshotting the current one first, so undo is undoable). */
+	async restoreRevision(rev: number): Promise<boolean> {
+		const db = await this.getDbFn();
+		const found = await db
+			.collection<ProfileRevisionDoc>(ScopedProfile.REVISIONS)
+			.findOne({ userEmail: this.userEmail, rev } as Filter<ProfileRevisionDoc>);
+		if (!found) return false;
+		await this.upsert(found.doc, `Restored from rev ${rev}`);
+		return true;
+	}
 
 	/** The user's master profile, or null if they haven't created one yet. */
 	async get(): Promise<WithId<ProfileDoc> | null> {
@@ -100,7 +165,10 @@ class ScopedProfile {
 	 * `updatedAt`, and forces `userEmail` to this scope — the incoming `doc`
 	 * cannot override ownership.
 	 */
-	async upsert(doc: ResumeDocument): Promise<ProfileDoc> {
+	async upsert(doc: ResumeDocument, label = 'Saved'): Promise<ProfileDoc> {
+		// Preserve the version we're about to replace.
+		await this.snapshotCurrent(label);
+
 		const db = await this.getDbFn();
 		const col = db.collection<ProfileDoc>(ScopedProfile.COLLECTION);
 		const now = new Date();

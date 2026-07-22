@@ -52,6 +52,48 @@
 		<ProfileEditor bind:profile />
 	</div>
 
+	<!-- Version history — the undo path for a bad save or an import that replaced everything -->
+	<div class="card" style="margin-top:1rem">
+		<div class="section-head"><h2>Version history</h2><span class="count">{data.revisions.length}</span></div>
+		{#if data.revisions.length === 0}
+			<p class="muted">No earlier versions yet. Each save keeps a snapshot of what it replaced.</p>
+		{:else}
+			<p class="muted" style="margin-top:-0.4rem">
+				Each save snapshots the version it replaced, so a bad edit or import can be rolled back.
+				Restoring also snapshots the current version first.
+			</p>
+			<div class="stack" style="margin-top:0.6rem">
+				{#each data.revisions as r (r.rev)}
+					<div class="row" style="gap:0.6rem">
+						<span class="muted" style="min-width:3.5rem">rev {r.rev}</span>
+						<span>{r.label}</span>
+						<span class="dim" style="font-size:0.8rem">{new Date(r.savedAt).toLocaleString()}</span>
+						<span class="spacer"></span>
+						<form
+							method="POST"
+							action="?/restore"
+							use:enhance={() => {
+								status = null;
+								return async ({ result, update }) => {
+									if (result.type === 'success') {
+										await update({ reset: false });
+										profile = structuredClone(data.profile);
+										status = { kind: 'ok', text: `Restored version ${r.rev}.` };
+									} else if (result.type === 'failure') {
+										status = { kind: 'err', text: (result.data?.message as string) ?? 'Restore failed.' };
+									}
+								};
+							}}
+						>
+							<input type="hidden" name="rev" value={r.rev} />
+							<button type="submit" class="btn-ghost">Restore</button>
+						</form>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+
 	<form
 		method="POST"
 		action="?/save"

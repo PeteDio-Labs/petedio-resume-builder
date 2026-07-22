@@ -1,56 +1,18 @@
 import { describe, expect, it } from 'bun:test';
 import type { Db } from 'mongodb';
 import { createRepository } from './repository';
+import { createInMemoryDb } from './memory';
 import { emptyProfile } from '../../resume/schema';
-
-/**
- * A tiny in-memory stand-in for the subset of the Mongo Db API the repository
- * uses (findOne / replaceOne with upsert). It lets us prove row-scoping
- * without a live MongoDB — CI is GitHub-hosted and has no database.
- */
-function fakeDb() {
-	const store: Record<string, Record<string, unknown>[]> = {};
-	const matches = (doc: Record<string, unknown>, filter: Record<string, unknown>) =>
-		Object.entries(filter).every(([k, v]) => doc[k] === v);
-
-	const db = {
-		_store: store,
-		collection(name: string) {
-			store[name] ??= [];
-			const col = store[name];
-			return {
-				async findOne(filter: Record<string, unknown> = {}) {
-					return col.find((d) => matches(d, filter)) ?? null;
-				},
-				async replaceOne(
-					filter: Record<string, unknown>,
-					replacement: Record<string, unknown>,
-					opts?: { upsert?: boolean }
-				) {
-					const idx = col.findIndex((d) => matches(d, filter));
-					if (idx >= 0) col[idx] = { ...replacement };
-					else if (opts?.upsert) col.push({ ...replacement });
-					return { acknowledged: true };
-				},
-				async insertOne(doc: Record<string, unknown>) {
-					col.push({ ...doc });
-					return { acknowledged: true, insertedId: 'fake' };
-				}
-			};
-		}
-	};
-	return db as unknown as Db;
-}
 
 describe('ScopedProfile', () => {
 	it('returns null when the user has no profile yet', async () => {
-		const db = fakeDb();
+		const db = createInMemoryDb();
 		const repo = createRepository('jane@example.com', () => Promise.resolve(db));
 		expect(await repo.profiles.get()).toBeNull();
 	});
 
 	it('upsert stamps userEmail + timestamps and get reads it back', async () => {
-		const db = fakeDb();
+		const db = createInMemoryDb();
 		const repo = createRepository('jane@example.com', () => Promise.resolve(db));
 
 		const doc = emptyProfile();
@@ -67,7 +29,7 @@ describe('ScopedProfile', () => {
 	});
 
 	it('a second upsert preserves createdAt but bumps updatedAt', async () => {
-		const db = fakeDb();
+		const db = createInMemoryDb();
 		const repo = createRepository('jane@example.com', () => Promise.resolve(db));
 
 		const first = await repo.profiles.upsert(emptyProfile());
@@ -77,12 +39,57 @@ describe('ScopedProfile', () => {
 		expect(second.updatedAt.getTime()).toBeGreaterThanOrEqual(first.updatedAt.getTime());
 
 		// Still exactly one row for this user (replace, not insert).
-		const store = (db as unknown as { _store: Record<string, unknown[]> })._store;
-		expect(store.profiles).toHaveLength(1);
+		const rows = await db.collection('profiles').find({ userEmail: 'jane@example.com' }).toArray();
+		expect(rows).toHaveLength(1);
+	});
+
+	it('a wipe is recoverable via version history (UAT H3)', async () => {
+		const db = createInMemoryDb();
+		const jane = createRepository('jane@example.com', () => Promise.resolve(db));
+
+		const full = emptyProfile();
+		full.basics.name = 'Jane Doe';
+		full.work = [
+			{ name: 'Acme', position: 'PM', location: '', url: '', startDate: '2020-01', endDate: '2022-01', summary: '', highlights: ['Shipped a thing'] }
+		];
+		await jane.profiles.upsert(full);
+
+		// First save has nothing to preserve yet.
+		expect(await jane.profiles.listRevisions()).toHaveLength(0);
+
+		// The destructive save that previously lost everything for good.
+		await jane.profiles.upsert(emptyProfile(), 'Saved');
+		expect((await jane.profiles.get())?.work).toHaveLength(0);
+
+		// The replaced version was snapshotted.
+		const revs = await jane.profiles.listRevisions();
+		expect(revs).toHaveLength(1);
+		expect(revs[0].doc.basics.name).toBe('Jane Doe');
+		expect(revs[0].doc.work).toHaveLength(1);
+
+		// And it can be rolled back.
+		expect(await jane.profiles.restoreRevision(revs[0].rev)).toBe(true);
+		const restored = await jane.profiles.get();
+		expect(restored?.basics.name).toBe('Jane Doe');
+		expect(restored?.work).toHaveLength(1);
+
+		// Restoring also preserved the wiped state, so the undo is itself undoable.
+		expect((await jane.profiles.listRevisions()).length).toBeGreaterThan(1);
+	});
+
+	it('revisions are row-scoped', async () => {
+		const db = createInMemoryDb();
+		const jane = createRepository('jane@example.com', () => Promise.resolve(db));
+		const bob = createRepository('bob@example.com', () => Promise.resolve(db));
+		await jane.profiles.upsert(emptyProfile());
+		await jane.profiles.upsert(emptyProfile());
+		expect((await jane.profiles.listRevisions()).length).toBeGreaterThan(0);
+		expect(await bob.profiles.listRevisions()).toHaveLength(0);
+		expect(await bob.profiles.restoreRevision(1)).toBe(false);
 	});
 
 	it('is row-scoped: one user cannot read another user\'s profile', async () => {
-		const db = fakeDb(); // shared "database", two users
+		const db = createInMemoryDb(); // shared "database", two users
 		const jane = createRepository('jane@example.com', () => Promise.resolve(db));
 		const bob = createRepository('bob@example.com', () => Promise.resolve(db));
 

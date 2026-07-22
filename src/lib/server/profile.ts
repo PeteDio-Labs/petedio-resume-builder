@@ -19,6 +19,8 @@ export interface LoadedProfile {
 	dbError: boolean;
 	/** True when running against the in-memory demo store (data resets on restart). */
 	demo: boolean;
+	/** Past versions, newest first — the undo path for a bad save/import (UAT H3). */
+	revisions: { rev: number; label: string; savedAt: string }[];
 }
 
 /**
@@ -30,7 +32,7 @@ export interface LoadedProfile {
 export async function loadMasterProfile(email: string): Promise<LoadedProfile> {
 	const repo = createRepository(email);
 	try {
-		const stored = await repo.profiles.get();
+		const [stored, revs] = await Promise.all([repo.profiles.get(), repo.profiles.listRevisions()]);
 		return {
 			// normalizeProfile also strips Mongo-only fields (_id, userEmail,
 			// timestamps) so what reaches the client is a clean JSON Resume doc.
@@ -38,11 +40,16 @@ export async function loadMasterProfile(email: string): Promise<LoadedProfile> {
 			exists: Boolean(stored),
 			updatedAt: stored?.updatedAt ? new Date(stored.updatedAt).toISOString() : null,
 			dbError: false,
-			demo: isDemoMode()
+			demo: isDemoMode(),
+			revisions: revs.map((r) => ({
+				rev: r.rev,
+				label: r.label,
+				savedAt: new Date(r.savedAt).toISOString()
+			}))
 		};
 	} catch (err) {
 		console.error('loadMasterProfile: MongoDB unavailable', err);
-		return { profile: emptyProfile(), exists: false, updatedAt: null, dbError: true, demo: isDemoMode() };
+		return { profile: emptyProfile(), exists: false, updatedAt: null, dbError: true, demo: isDemoMode(), revisions: [] };
 	}
 }
 
@@ -53,7 +60,7 @@ export class InvalidProfileError extends Error {}
  * Throws `InvalidProfileError` on malformed JSON (→ 400) and rethrows any
  * driver error (→ 503) so the caller can map it to the right form failure.
  */
-export async function saveMasterProfile(email: string, docJson: string): Promise<string> {
+export async function saveMasterProfile(email: string, docJson: string, label = 'Saved'): Promise<string> {
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(docJson);
@@ -63,6 +70,11 @@ export async function saveMasterProfile(email: string, docJson: string): Promise
 
 	const clean = normalizeProfile(parsed);
 	const repo = createRepository(email);
-	const saved = await repo.profiles.upsert(clean);
+	const saved = await repo.profiles.upsert(clean, label);
 	return new Date(saved.updatedAt).toISOString();
+}
+
+/** Roll the master profile back to a previous version (UAT H3). */
+export async function restoreProfileRevision(email: string, rev: number): Promise<boolean> {
+	return createRepository(email).profiles.restoreRevision(rev);
 }
