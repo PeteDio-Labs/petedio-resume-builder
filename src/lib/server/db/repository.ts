@@ -19,6 +19,7 @@
 import type { Db, Document, Filter, OptionalUnlessRequiredId, WithId } from 'mongodb';
 import { resolveDb } from './provider';
 import { newId, type ResumeDocument } from '../../resume/schema';
+import type { ApplicationStatus } from '../../applications';
 
 /**
  * Returns a connected Db. Swapped in tests; defaults to `resolveDb`, which
@@ -209,6 +210,100 @@ class ScopedResumes {
 }
 
 /**
+ * A tracked job application. Holds the job link and the pipeline status, and
+ * relates to a resume via `resumeId` (nullable — you can track a job before
+ * tailoring a resume for it). Many per user.
+ */
+export interface ApplicationDoc extends Scoped {
+	id: string;
+	/** The job posting URL — the thing being tracked. */
+	url: string;
+	title: string;
+	company: string;
+	status: ApplicationStatus;
+	/** FK → resumes.id (the resume used/intended for this job), or null. */
+	resumeId: string | null;
+	notes: string;
+	createdAt: Date;
+	updatedAt: Date;
+	deletedAt: Date | null;
+}
+
+export type ApplicationInput = Pick<
+	ApplicationDoc,
+	'url' | 'title' | 'company' | 'status' | 'resumeId' | 'notes'
+>;
+
+/** Row-scoped accessor for the `applications` collection. */
+class ScopedApplications {
+	private static readonly COLLECTION = 'applications';
+
+	constructor(
+		private readonly userEmail: string,
+		private readonly getDbFn: DbProvider
+	) {}
+
+	async create(input: ApplicationInput): Promise<ApplicationDoc> {
+		const db = await this.getDbFn();
+		const now = new Date();
+		const row: ApplicationDoc = {
+			...input,
+			id: newId(),
+			userEmail: this.userEmail,
+			createdAt: now,
+			updatedAt: now,
+			deletedAt: null
+		};
+		await db
+			.collection<ApplicationDoc>(ScopedApplications.COLLECTION)
+			.insertOne(row as OptionalUnlessRequiredId<ApplicationDoc>);
+		return row;
+	}
+
+	async get(id: string): Promise<WithId<ApplicationDoc> | null> {
+		const db = await this.getDbFn();
+		return db
+			.collection<ApplicationDoc>(ScopedApplications.COLLECTION)
+			.findOne({ id, userEmail: this.userEmail, deletedAt: null } as Filter<ApplicationDoc>);
+	}
+
+	async list(): Promise<WithId<ApplicationDoc>[]> {
+		const db = await this.getDbFn();
+		const rows = await db
+			.collection<ApplicationDoc>(ScopedApplications.COLLECTION)
+			.find({ userEmail: this.userEmail, deletedAt: null } as Filter<ApplicationDoc>)
+			.toArray();
+		return rows.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+	}
+
+	/** Patch a live application's fields (status, resume link, notes, …). */
+	async update(id: string, patch: Partial<ApplicationInput>): Promise<ApplicationDoc | null> {
+		const db = await this.getDbFn();
+		const col = db.collection<ApplicationDoc>(ScopedApplications.COLLECTION);
+		const existing = await col.findOne({ id, userEmail: this.userEmail, deletedAt: null } as Filter<ApplicationDoc>);
+		if (!existing) return null;
+		const { _id, ...rest } = existing;
+		void _id;
+		const row: ApplicationDoc = { ...rest, ...patch, id, userEmail: this.userEmail, updatedAt: new Date() };
+		await col.replaceOne({ id, userEmail: this.userEmail } as Filter<ApplicationDoc>, row);
+		return row;
+	}
+
+	async softDelete(id: string): Promise<void> {
+		const db = await this.getDbFn();
+		const col = db.collection<ApplicationDoc>(ScopedApplications.COLLECTION);
+		const existing = await col.findOne({ id, userEmail: this.userEmail } as Filter<ApplicationDoc>);
+		if (!existing) return;
+		const now = new Date();
+		await col.replaceOne({ id, userEmail: this.userEmail } as Filter<ApplicationDoc>, {
+			...existing,
+			deletedAt: now,
+			updatedAt: now
+		});
+	}
+}
+
+/**
  * Repository entry point. Construct with the identity from
  * `event.locals.user` — never with a caller-supplied email — so a route
  * physically cannot request another user's scope.
@@ -223,7 +318,9 @@ export function createRepository(userEmail: string, getDbFn: DbProvider = resolv
 		/** The user's master profile (JSON Resume). Singleton per user. */
 		profiles: new ScopedProfile(userEmail, getDbFn),
 		/** The user's tailored resumes (many). */
-		resumes: new ScopedResumes(userEmail, getDbFn)
+		resumes: new ScopedResumes(userEmail, getDbFn),
+		/** The user's tracked job applications (many; each links to a resume). */
+		applications: new ScopedApplications(userEmail, getDbFn)
 	};
 }
 
