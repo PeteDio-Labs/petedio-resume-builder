@@ -41,6 +41,16 @@
 				<a href="/resumes" class="btn">My resumes</a>
 			</div>
 		</div>
+
+		<div class="card" style="margin-top:1rem">
+			<div class="section-head"><h2>Job tracker</h2></div>
+			<p class="muted" style="margin-top:-0.4rem">
+				Track jobs by their link, move them through the pipeline, and link the resume you used.
+			</p>
+			<div class="row" style="margin-top:0.75rem">
+				<a href="/applications" class="btn btn-primary">Open job tracker</a>
+			</div>
+		</div>
 	{:else}
 		<div class="banner warn" style="margin:0.75rem 0">
 			Not provisioned. Sign in via Cloudflare Access.
