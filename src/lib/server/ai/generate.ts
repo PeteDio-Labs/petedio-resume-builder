@@ -24,6 +24,43 @@ export interface TargetJob {
 /* ---------------- T2: tailoring ---------------- */
 
 /**
+ * Choose keywords for the summary's targeting line, skipping anything that would
+ * read as repetition. Without this you get "Targeting Director of Product at
+ * Initech, bringing platform, product, director product." — because the raw top-N
+ * repeats words already in the job title AND words shared between overlapping
+ * keywords ("product" vs. "director product").
+ *
+ * Two rules: drop a term whose words the job title already says, and drop a term
+ * sharing any word with one already chosen.
+ */
+export function pickDistinctKeywords(
+	keywords: ExtractedKeyword[],
+	jobTitle: string,
+	limit: number
+): string[] {
+	const stop = (w: string) => w.length > 2;
+	const titleWords = new Set(jobTitle.toLowerCase().split(/\s+/).filter(stop));
+	const picked: string[] = [];
+	const usedWords = new Set<string>();
+
+	for (const k of keywords) {
+		if (picked.length >= limit) break;
+		if (k.kind === 'soft') continue;
+		const term = k.term.trim();
+		if (!term) continue;
+		const words = term.toLowerCase().split(/\s+/).filter(stop);
+		if (words.length === 0) continue;
+		// Already stated by the title we're mirroring.
+		if (words.every((w) => titleWords.has(w))) continue;
+		// Overlaps something we've already listed.
+		if (words.some((w) => usedWords.has(w))) continue;
+		picked.push(term);
+		for (const w of words) usedWords.add(w);
+	}
+	return picked;
+}
+
+/**
  * Tailor the master profile to a job: mirror the title, add a targeting line to
  * the summary using top hard keywords, and reorder each role's bullets so the
  * keyword-bearing ones lead. Reorders/annotates — never fabricates.
@@ -37,7 +74,7 @@ export function tailorResumeDeterministic(
 
 	doc.basics.label = job.title || doc.basics.label || '';
 
-	const topHard = keywords.filter((k) => k.kind !== 'soft').slice(0, 3).map((k) => k.term);
+	const topHard = pickDistinctKeywords(keywords, job.title ?? '', 3);
 	const base = (doc.basics.summary ?? '').trim();
 	const targetLine =
 		`Targeting ${job.title || 'this role'}${job.company ? ' at ' + job.company : ''}` +
