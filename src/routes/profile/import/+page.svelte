@@ -2,6 +2,7 @@
 	import { enhance } from '$app/forms';
 	import { goto } from '$app/navigation';
 	import ProfileEditor from '$lib/components/ProfileEditor.svelte';
+	import { confirmSubmit } from '$lib/guards.svelte';
 	import type { ResumeDocument } from '$lib/resume/schema';
 	import type { PageData } from './$types';
 
@@ -68,6 +69,11 @@
 		<form
 			method="POST"
 			action="?/save"
+			use:confirmSubmit={
+				data.alreadyHasProfile
+					? 'This REPLACES your master profile with the parsed draft. The version it replaces is snapshotted, but everything on screen becomes your profile. Continue?'
+					: 'Save this parsed draft as your master profile?'
+			}
 			class="save-bar"
 			use:enhance={() => {
 				saving = true;

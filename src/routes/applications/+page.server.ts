@@ -4,7 +4,8 @@ import {
 	removeApplication,
 	setApplicationStatus,
 	trackJob,
-	linkResume
+	linkResume,
+	isUsableUrl
 } from '$lib/server/applications';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -19,6 +20,11 @@ export const actions: Actions = {
 		const form = await request.formData();
 		const url = String(form.get('url') ?? '');
 		if (url.trim() === '') return fail(400, { message: 'Paste a job link to track.' });
+		if (!isUsableUrl(url)) {
+			return fail(400, {
+				message: `"${url.trim().slice(0, 60)}" isn't a link a browser can open — paste the job posting's URL.`
+			});
+		}
 		try {
 			await trackJob(locals.user.email, {
 				url,

@@ -1,9 +1,14 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { confirmSubmit } from '$lib/guards.svelte';
 	import { APPLICATION_STATUSES, STATUS_COLOR } from '$lib/applications';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
+
+	// Action failures had nowhere to render — the page never read `form`, so a
+	// rejected job link failed silently and looked like nothing had happened.
+	let error = $state('');
 </script>
 
 <svelte:head><title>Job tracker · Resume Builder</title></svelte:head>
@@ -25,8 +30,30 @@
 		<div class="banner warn" style="margin:1rem 0">⚠ The database isn't reachable yet, so jobs can't be tracked.</div>
 	{/if}
 
+	{#if error}
+		<div class="banner warn" style="margin:1rem 0">{error}</div>
+	{/if}
+
 	<!-- Track a job -->
-	<form method="POST" action="?/track" class="card" style="margin-top:1rem" use:enhance>
+	<form
+		method="POST"
+		action="?/track"
+		class="card"
+		style="margin-top:1rem"
+		use:enhance={() => {
+			error = '';
+			return async ({ result, update }) => {
+				if (result.type === 'failure') {
+					error = (result.data?.message as string) ?? 'Could not track that job.';
+					// reset:false keeps what she typed so she can fix the link rather
+					// than retype the title and company.
+					await update({ reset: false });
+				} else {
+					await update();
+				}
+			};
+		}}
+	>
 		<div class="section-head"><h2>Track a job</h2></div>
 		<label class="field"><span class="field-label">Job link</span>
 			<input type="text" name="url" placeholder="https://… (paste the posting URL)" required />
@@ -96,7 +123,13 @@
 
 						<span class="spacer"></span>
 						<span class="dim" style="font-size:0.8rem">Updated {new Date(a.updatedAt).toLocaleDateString()}</span>
-						<form method="POST" action="?/remove" use:enhance style="display:inline">
+						<form
+							method="POST"
+							action="?/remove"
+							use:confirmSubmit={`Remove "${a.title || a.url}" from the tracker?`}
+							use:enhance
+							style="display:inline"
+						>
 							<input type="hidden" name="id" value={a.id} />
 							<button type="submit" class="btn-ghost btn-danger">Remove</button>
 						</form>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { computeAtsScore, lintResume } from './analyze';
+import { computeAtsScore, hasUsableContent, lintResume } from './analyze';
 import { emptyProfile, type ResumeDocument } from './schema';
 
 function scored(): ResumeDocument {
@@ -160,5 +160,27 @@ describe('Title match must not score its own output (UAT)', () => {
 		d.x_petedio.keywords = { extracted: [{ term: 'kubernetes', aliases: [], kind: 'hard', weight: 100 }], matched: [], missing: [] };
 		const title = computeAtsScore(d).components.find((c) => c.label === 'Title match')!;
 		expect(title.got).toBe(title.max);
+	});
+});
+
+describe('hasUsableContent — existing is not the same as usable (UAT M2)', () => {
+	it('rejects a profile that exists but holds nothing', () => {
+		expect(hasUsableContent(emptyProfile())).toBe(false);
+	});
+
+	it('accepts a profile with any real section', () => {
+		const withSummary = emptyProfile();
+		withSummary.basics.summary = 'Product manager with 7+ years.';
+		expect(hasUsableContent(withSummary)).toBe(true);
+
+		const withSkills = emptyProfile();
+		withSkills.skills = [{ name: 'Product', keywords: ['Roadmapping'] }];
+		expect(hasUsableContent(withSkills)).toBe(true);
+	});
+
+	it('is not fooled by whitespace', () => {
+		const blank = emptyProfile();
+		blank.basics.summary = '   \n  ';
+		expect(hasUsableContent(blank)).toBe(false);
 	});
 });

@@ -369,3 +369,35 @@ describe('recommendReuseDeterministic — no confident suggestion on weak overla
 		expect(matches.every((m) => m.score >= MIN_REUSE_SCORE)).toBe(true);
 	});
 });
+
+describe('character-cap truncation (UAT L2)', () => {
+	const longAnswer = () => {
+		const p = emptyProfile();
+		p.basics.summary =
+			'Product manager with seven years of experience shipping zero-to-one products across fintech and developer tools.';
+		return p;
+	};
+	const ask = (targetChars: number) =>
+		answerQuestionDeterministic({
+			question: 'Anything else?',
+			kind: 'custom',
+			context: '',
+			resume: longAnswer(),
+			profile: longAnswer(),
+			story: null,
+			targetChars
+		});
+
+	it('does not degenerate to punctuation at a tiny cap', () => {
+		const answer = ask(1);
+		expect(answer).not.toBe('…');
+		expect(answer.length).toBeGreaterThan(10);
+	});
+
+	it('still truncates at a usable cap, on a word boundary', () => {
+		const answer = ask(80);
+		expect(answer.length).toBeLessThanOrEqual(80);
+		expect(answer).toEndWith('…');
+		expect(answer).not.toMatch(/\s…$/); // no dangling space before the ellipsis
+	});
+});

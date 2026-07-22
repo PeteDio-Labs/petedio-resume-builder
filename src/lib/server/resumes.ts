@@ -9,7 +9,14 @@ import { extractKeywordsHeuristic } from './ai/keywords';
 import { startJob } from './jobs';
 import { isDemoMode } from './config';
 import { createRepository } from './db/repository';
-import { computeAtsScore, lintResume, resumeText, type AtsScore, type LintFinding } from '../resume/analyze';
+import {
+	computeAtsScore,
+	hasUsableContent,
+	lintResume,
+	resumeText,
+	type AtsScore,
+	type LintFinding
+} from '../resume/analyze';
 import { emptyProfile, normalizeProfile, type ExtractedKeyword, type ResumeDocument } from '../resume/schema';
 
 export interface JobInput {
@@ -203,11 +210,21 @@ export async function generateTailored(email: string, id: string): Promise<void>
 	if (!row) return;
 	if (!profileRow) throw new NoProfileError('Create a master profile first.');
 
+	// Existing ≠ usable. The guard only checked that a profile row was there, so
+	// an empty profile produced a resume marked "tailored" with zero entries —
+	// a document that looks finished and contains nothing.
+	const source = normalizeProfile(profileRow);
+	if (!hasUsableContent(source)) {
+		throw new NoProfileError(
+			'Your master profile is empty — add your experience there first, or a tailored resume has nothing to draw from.'
+		);
+	}
+
 	const resume = normalizeProfile(row);
 	const ai = createAiProvider();
 	const tj = resume.x_petedio.targetJob;
 	const { doc } = await ai.tailorResume({
-		profile: normalizeProfile(profileRow),
+		profile: source,
 		job: {
 			title: tj?.title ?? '',
 			company: tj?.company ?? '',

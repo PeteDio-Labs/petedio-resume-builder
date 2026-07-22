@@ -121,6 +121,12 @@ h3 {
 	padding: 1.1rem 1.15rem;
 	backdrop-filter: blur(16px) saturate(180%);
 	-webkit-backdrop-filter: blur(16px) saturate(180%);
+	/* Clear the home-indicator area on iOS. */
+	padding-bottom: max(0.85rem, env(safe-area-inset-bottom));
+}
+/* Any page carrying a sticky save bar reserves space for it. */
+.page:has(.save-bar) {
+	padding-bottom: 6rem;
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
@@ -257,7 +263,14 @@ textarea {
 	color: var(--blue);
 	border-color: transparent;
 	padding: 0.4rem 0.6rem;
-	min-height: 0;
+	/* NOT min-height: 0 — that reset made every ghost button a sub-44px target,
+	   and the ghosts are the controls used most (Archive, Delete, Back). The
+	   44px floor is the iOS/WCAG minimum; keep the compact padding, keep the
+	   hit area. */
+	min-height: 44px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 }
 .btn-ghost:hover {
 	background: var(--glass-fill);
@@ -275,6 +288,12 @@ textarea {
 	line-height: 1;
 	cursor: pointer;
 	padding: 0.15rem 0.4rem;
+	/* Row add/remove controls: 32px before, under thumb size on mobile. */
+	min-width: 44px;
+	min-height: 44px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
 	border-radius: 8px;
 }
 .icon-btn:hover {
@@ -308,6 +327,19 @@ textarea {
 	font-size: 1rem;
 	line-height: 1;
 	padding: 0 0.15rem;
+	/* The chip itself must stay chip-sized, so the × grows its HIT AREA rather
+	   than its box: a 44px touch surface centred on a 26px glyph. Without this
+	   the most-tapped control in the editor was the smallest. */
+	position: relative;
+}
+.chip-x::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 44px;
+	height: 44px;
+	transform: translate(-50%, -50%);
 }
 .chip-x:hover {
 	color: var(--red);
@@ -333,6 +365,11 @@ textarea {
 	font-size: 0.82rem;
 	cursor: pointer;
 	text-transform: capitalize;
+	/* Story tags are toggled far more on a phone than anywhere else — 27px tall
+	   was the last sub-44px control left after the ghost/icon/chip fixes. */
+	min-height: 44px;
+	display: inline-flex;
+	align-items: center;
 }
 .toggle[aria-pressed='true'] {
 	background: rgba(10, 132, 255, 0.18);
@@ -373,6 +410,12 @@ textarea {
 }
 
 /* Sticky save bar */
+/* The sticky bar floats over the end of the page, so the page needs room to
+   scroll past it — without this the last control sat underneath the bar and was
+   physically untappable on mobile (elementFromPoint returned the bar). */
+.page > :last-child.save-bar {
+	margin-bottom: 0;
+}
 .save-bar {
 	position: sticky;
 	bottom: 0;

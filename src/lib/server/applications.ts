@@ -45,6 +45,33 @@ export function normalizeUrl(url: string): string {
 	return /^https?:\/\//i.test(u) ? u : `https://${u}`;
 }
 
+/**
+ * Is this something a browser can actually open?
+ *
+ * `"not a url"` used to be stored as `"https://not a url"` and rendered as a
+ * dead link with no feedback — the tracker's whole job is the link, so a broken
+ * one is a silently useless row. Parsing with the URL constructor (rather than a
+ * regex) also pins the scheme to http/https: anything else — `javascript:`,
+ * `data:`, `file:` — is rejected outright instead of relying on the prepend
+ * above to defuse it.
+ */
+export function isUsableUrl(url: string): boolean {
+	const normalized = normalizeUrl(url);
+	if (!normalized) return false;
+	let parsed: URL;
+	try {
+		parsed = new URL(normalized);
+	} catch {
+		return false;
+	}
+	if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+	// A hostname with a space or no dot isn't a real host ("not a url" parses,
+	// because URL is permissive; "localhost" is fine, "not a url" is not).
+	const host = parsed.hostname;
+	if (!host || /\s/.test(host)) return false;
+	return host === 'localhost' || /^[a-z0-9-]+(\.[a-z0-9-]+)+$/i.test(host);
+}
+
 function labelFor(app: { title: string; company: string; url: string }): string {
 	if (app.title) return app.title;
 	if (app.company) return app.company;
