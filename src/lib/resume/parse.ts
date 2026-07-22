@@ -119,6 +119,8 @@ function extractDateRange(line: string): { startDate: string; endDate: string; r
 	const m = line.match(RANGE_RE);
 	if (!m) return { startDate: '', endDate: '', rest: line };
 	const rest = (line.slice(0, m.index) + line.slice((m.index ?? 0) + m[0].length))
+		// Removing a bracketed date leaves empty delimiters behind ("Acme ()").
+		.replace(/\(\s*\)|\[\s*\]/g, '')
 		.replace(/[—–|,·•\-]\s*$/, '')
 		.replace(/\s{2,}/g, ' ')
 		.trim();
@@ -281,42 +283,86 @@ function segment(lines: string[], headerEndIdx: number): Block[] {
  * Per-section parsers
  * ------------------------------------------------------------------ */
 
-/** Split a heading like "Position, Company, City, ST" (dates already removed). */
-function splitRoleHeading(rest: string): { position: string; name: string; location: string } {
-	let position = '';
-	let name = '';
-	let location = '';
+// Words that mark a chunk as a JOB TITLE rather than a company name. Resumes are
+// written both ways ("Position, Company" and "Company — Position"), and assuming
+// one order silently swapped the fields for the other (UAT H4).
+const TITLE_WORDS = new Set([
+	'manager', 'engineer', 'coordinator', 'associate', 'director', 'recruiter', 'analyst',
+	'designer', 'developer', 'lead', 'specialist', 'consultant', 'president', 'officer',
+	'head', 'architect', 'scientist', 'administrator', 'assistant', 'supervisor', 'partner',
+	'principal', 'intern', 'technician', 'strategist', 'writer', 'editor', 'producer',
+	'representative', 'agent', 'advisor', 'controller', 'chief', 'founder', 'owner',
+	'sourcer', 'generalist', 'operations', 'marketing', 'sales', 'support', 'staff',
+	'senior', 'junior', 'vp', 'cto', 'ceo', 'cfo', 'coo', 'pm', 'swe'
+]);
 
+function hasTitleWord(s: string): boolean {
+	return s
+		.toLowerCase()
+		.split(/[^a-z]+/)
+		.some((w) => TITLE_WORDS.has(w));
+}
+
+/** A line that is nothing but a date range — belongs to the entry above it. */
+function isDateOnlyLine(cleaned: string): boolean {
+	const { startDate, endDate, rest } = extractDateRange(cleaned);
+	return (startDate !== '' || endDate !== '') && rest.replace(/[\s,—–|()]/g, '') === '';
+}
+
+/**
+ * Split a role heading into position / company / location. Handles both common
+ * orders by looking for a title word rather than assuming position-first, and
+ * reports when it had to guess so the reviewer knows to check.
+ */
+function splitRoleHeading(rest: string): {
+	position: string;
+	name: string;
+	location: string;
+	guessed: boolean;
+} {
 	// "Position at Company" is a strong, unambiguous signal.
 	const atMatch = rest.match(/^(.*?)\s+at\s+(.*)$/i);
 	if (atMatch) {
-		position = atMatch[1].trim();
 		const tail = atMatch[2].split(',').map((s) => s.trim());
-		name = tail.shift() ?? '';
-		location = tail.join(', ');
-		return { position, name, location };
+		return {
+			position: atMatch[1].trim(),
+			name: tail.shift() ?? '',
+			location: tail.join(', '),
+			guessed: false
+		};
 	}
 
 	const parts = rest
-		.split(/,|—|–|\|/)
+		.split(/,|—|–|\||\t/)
 		.map((s) => s.trim())
 		.filter(Boolean);
 
+	if (parts.length === 0) return { position: '', name: '', location: '', guessed: false };
 	if (parts.length === 1) {
-		// One chunk — can't tell position from company; put it in position.
-		position = parts[0];
-	} else {
-		position = parts[0];
-		name = parts[1];
-		// A trailing "City, ST" collapses to the last one or two chunks.
-		location = parts.slice(2).join(', ');
+		// One chunk — assume it's the title (the company usually follows elsewhere).
+		return { position: parts[0], name: '', location: '', guessed: false };
 	}
-	return { position, name, location };
+
+	const titleIdx = parts.findIndex(hasTitleWord);
+	if (titleIdx === 0) {
+		// "Position, Company, City, ST" — the common case.
+		return { position: parts[0], name: parts[1] ?? '', location: parts.slice(2).join(', '), guessed: false };
+	}
+	if (titleIdx > 0) {
+		// "Company — Position, City" — the order we used to get backwards.
+		const rem = parts.filter((_, i) => i !== titleIdx && i !== 0);
+		return { position: parts[titleIdx], name: parts[0], location: rem.join(', '), guessed: false };
+	}
+	// No title word anywhere — fall back to position-first, but say so.
+	return { position: parts[0], name: parts[1] ?? '', location: parts.slice(2).join(', '), guessed: true };
 }
 
-function parseExperience(lines: string[]): WorkItem[] {
+function parseExperience(lines: string[]): { items: WorkItem[]; warnings: string[] } {
 	const items: WorkItem[] = [];
+	const warnings: string[] = [];
 	let current: WorkItem | null = null;
+
+	let sawBullet = false;
 
 	for (const raw of lines) {
 		const line = raw.trim();
@@ -330,29 +376,54 @@ function parseExperience(lines: string[]): WorkItem[] {
 				items.push(current);
 			}
 			current.highlights.push(stripBullet(raw));
+			sawBullet = true;
 			continue;
 		}
 
 		const cleaned = clean(raw);
-		const { startDate, endDate, rest } = extractDateRange(cleaned);
+		let { startDate, endDate, rest } = extractDateRange(cleaned);
+		// No range? A lone trailing date still dates the role ("… at Acme (2025)").
+		if (!startDate && !endDate) {
+			const lone = cleaned.match(TRAILING_DATE_RE);
+			if (lone) {
+				startDate = parseDate(lone[1]);
+				rest = cleaned.slice(0, lone.index).replace(/[,—–|(]\s*$/, '').trim();
+			}
+		}
+
+		// A line that is ONLY a date range belongs to the role above it — it is not
+		// a new heading (this used to make the date string become the job title).
+		if (isDateOnlyLine(cleaned) && current && !current.startDate && !sawBullet) {
+			current.startDate = startDate;
+			current.endDate = endDate;
+			continue;
+		}
+
 		// Bold is only a heading signal when the line STARTS with it (how resumes
 		// bold "**Position**, Company"). A prose line with mid-sentence emphasis
 		// ("Passionate about **diversity** hiring") is not a heading.
 		const startsBold = /^\s*\*\*/.test(raw);
-		const isHeading = startDate !== '' || endDate !== '' || startsBold;
+		const isHeading = startDate !== '' || endDate !== '' || startsBold || hasTitleWord(cleaned);
+
+		// A company/location line directly under a heading that lacks a company
+		// ("People Operations Associate" / "Monstro, New York, NY" on two lines).
+		if (!isHeading && current && !current.name && !sawBullet && cleaned.length < 80) {
+			const parts = cleaned.split(/,|—|–|\|/).map((s) => s.trim()).filter(Boolean);
+			current.name = parts[0] ?? '';
+			current.location = parts.slice(1).join(', ');
+			continue;
+		}
 
 		if (isHeading) {
-			const { position, name, location } = splitRoleHeading(rest || cleaned);
-			current = {
-				name,
-				position,
-				location,
-				startDate,
-				endDate,
-				summary: '',
-				highlights: []
-			};
+			const { position, name, location, guessed } = splitRoleHeading(rest || cleaned);
+			if (guessed && name) {
+				warnings.push(
+					`Couldn't tell the job title from the company in "${cleaned.slice(0, 48)}" — check that role.`
+				);
+			}
+			current = { name, position, location, startDate, endDate, summary: '', highlights: [] };
 			items.push(current);
+			sawBullet = false;
 		} else {
 			// A non-bullet, non-heading line = prose summary for the current entry
 			// (opening an implicit one rather than dropping pre-heading prose).
@@ -364,7 +435,12 @@ function parseExperience(lines: string[]): WorkItem[] {
 		}
 	}
 
-	return items;
+	// Drop entries the heuristics opened but never filled (no title, no company,
+	// no bullets) — they were pure noise in the review editor.
+	const kept = items.filter(
+		(w) => (w.position ?? '') !== '' || (w.name ?? '') !== '' || w.highlights.length > 0
+	);
+	return { items: kept, warnings };
 }
 
 function parseEducation(lines: string[]): EducationItem[] {
@@ -534,10 +610,24 @@ export function parseResumeText(raw: string): ParseResult {
 
 	const blocks = segment(lines, 0).filter((b) => b.section !== 'other');
 	if (blocks.length === 0) {
-		warnings.push(
-			'No standard sections (Experience, Education, Skills, …) were detected. ' +
-				'Contact details were extracted; add the rest in the editor.'
-		);
+		// No section headers at all. Rather than give up (which lost the entire
+		// résumé), run the role heuristics over the body — "Position at Company
+		// (2020–2022)" lines are still recognisable on their own.
+		const body = lines.slice(Math.max(firstHeaderIdx === lines.length ? 1 : firstHeaderIdx, 1));
+		const rescued = parseExperience(body);
+		if (rescued.items.length > 0) {
+			doc.work.push(...rescued.items);
+			warnings.push(...rescued.warnings);
+			warnings.push(
+				`No section headings found, so roles were inferred from the text — ${rescued.items.length} ` +
+					'found. Check them carefully.'
+			);
+		} else {
+			warnings.push(
+				'No standard sections (Experience, Education, Skills, …) were detected. ' +
+					'Contact details were extracted; add the rest in the editor.'
+			);
+		}
 		return { doc, warnings };
 	}
 
@@ -546,11 +636,14 @@ export function parseResumeText(raw: string): ParseResult {
 			case 'summary':
 				doc.basics.summary = block.lines.map(clean).filter(Boolean).join(' ');
 				break;
-			case 'experience':
+			case 'experience': {
 				// Multiple experience sections (e.g. "Recruiting" + "Project Mgmt") all
 				// feed the single work[] array, preserving order.
-				doc.work.push(...parseExperience(block.lines));
+				const r = parseExperience(block.lines);
+				doc.work.push(...r.items);
+				warnings.push(...r.warnings);
 				break;
+			}
 			case 'education':
 				doc.education.push(...parseEducation(block.lines));
 				break;

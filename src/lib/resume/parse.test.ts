@@ -142,6 +142,71 @@ describe('parseResumeText — robustness', () => {
 	});
 });
 
+describe('parseResumeText — real-world layouts (UAT H4)', () => {
+	it('handles dates on their own line (was: the date became the job title)', () => {
+		const { doc } = parseResumeText(
+			`Jane Doe
+NYC | jane@example.com
+
+EXPERIENCE
+
+People Operations Associate
+Monstro, New York, NY
+June 2025 - July 2025
+• Sourced candidates using Boolean search
+• Led the ATS migration`
+		);
+		expect(doc.work).toHaveLength(1);
+		expect(doc.work[0].position).toBe('People Operations Associate');
+		expect(doc.work[0].name).toBe('Monstro');
+		expect(doc.work[0].startDate).toBe('2025-06');
+		expect(doc.work[0].endDate).toBe('2025-07');
+		expect(doc.work[0].highlights).toHaveLength(2);
+	});
+
+	it('handles "Company — Position" order (was: silently swapped)', () => {
+		const { doc } = parseResumeText(
+			`JANE DOE
+
+WORK HISTORY
+Monstro — People Operations Associate\tJun 2025 – Jul 2025
+\t- Sourced technical candidates
+
+Better.com — Recruiting Coordinator\tOct 2019 – Jun 2021
+\t- Scheduled 100+ interviews monthly`
+		);
+		expect(doc.work).toHaveLength(2);
+		expect(doc.work[0].position).toBe('People Operations Associate');
+		expect(doc.work[0].name).toBe('Monstro');
+		expect(doc.work[1].position).toBe('Recruiting Coordinator');
+		expect(doc.work[1].name).toBe('Better.com');
+	});
+
+	it('recovers roles when there are no section headings (was: 0 parsed)', () => {
+		const { doc, warnings } = parseResumeText(
+			`Jane Doe
+jane@example.com
+
+People Operations Associate at Monstro (2025)
+Recruiting Coordinator at Better.com (2019-2021)`
+		);
+		expect(doc.work).toHaveLength(2);
+		expect(doc.work[0].position).toBe('People Operations Associate');
+		expect(doc.work[0].name).toBe('Monstro');
+		expect(doc.work[1].name).toBe('Better.com'); // no leftover "()"
+		expect(warnings.some((w) => /no section headings/i.test(w))).toBe(true);
+	});
+
+	it('warns when it cannot tell the title from the company', () => {
+		const { warnings } = parseResumeText(
+			`EXPERIENCE
+Foobar Ltd, Quux Industries — 2020 - 2022
+- Did the thing`
+		);
+		expect(warnings.some((w) => /couldn't tell the job title/i.test(w))).toBe(true);
+	});
+});
+
 describe('parseResumeText — review-hardening regressions', () => {
 	it('does not spawn a phantom role from a prose line with mid-sentence bold', () => {
 		const { doc } = parseResumeText(
