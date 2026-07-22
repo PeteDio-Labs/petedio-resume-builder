@@ -5,6 +5,8 @@
  * paths.
  */
 import { createAiProvider } from './ai/provider';
+import { extractKeywordsHeuristic } from './ai/keywords';
+import { startJob } from './jobs';
 import { isDemoMode } from './config';
 import { createRepository } from './db/repository';
 import { computeAtsScore, lintResume, resumeText, type AtsScore, type LintFinding } from '../resume/analyze';
@@ -49,8 +51,41 @@ export async function extractJobKeywords(
 	jdText: string
 ): Promise<{ keywords: ExtractedKeyword[]; mode: string }> {
 	const ai = createAiProvider();
-	const { keywords } = await ai.extractKeywords(jdText);
-	return { keywords, mode: ai.mode };
+	// `source`, not `ai.mode`: the Ollama lane falls back to the heuristic on
+	// failure, and the UI must show what actually ran.
+	const { keywords, source } = await ai.extractKeywords(jdText);
+	return { keywords, mode: source };
+}
+
+/**
+ * Instant keywords now, better keywords shortly.
+ *
+ * The deterministic extractor returns in under a millisecond; the model takes
+ * ~5-8s but is far sharper (it finds "CI/CD", "SLOs", "secrets management" where
+ * frequency counting finds "improving" and "proven"). Blocking the request on
+ * the model made the page sit on a spinner and, when the call timed out, served
+ * the heuristic anyway while claiming the model had run.
+ *
+ * So: answer immediately with the heuristic, and queue the model. `refineJobId`
+ * is null when there's no model lane to wait for (demo mode / no OLLAMA_HOST) —
+ * the client uses that to decide whether to poll at all.
+ */
+export function extractJobKeywordsFast(
+	email: string,
+	jdText: string
+): { keywords: ExtractedKeyword[]; mode: string; refineJobId: string | null } {
+	const keywords = extractKeywordsHeuristic(jdText);
+	const ai = createAiProvider();
+	if (ai.mode !== 'ollama') return { keywords, mode: 'heuristic', refineJobId: null };
+
+	const refineJobId = startJob(email, async () => {
+		const { keywords: refined, source } = await ai.extractKeywords(jdText);
+		// A fallback inside the provider means the model did NOT produce these —
+		// don't offer the user a "refined" set that is the same heuristic output.
+		if (source !== 'ollama') throw new Error('model unavailable — keeping the offline extraction');
+		return { keywords: refined, mode: source };
+	});
+	return { keywords, mode: 'heuristic', refineJobId };
 }
 
 /** T5 — suggest an existing resume to reuse for a JD (before generating fresh). */

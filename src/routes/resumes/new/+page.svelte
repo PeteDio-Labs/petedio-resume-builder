@@ -26,6 +26,46 @@
 	type Rec = { id: string; title: string; company: string; score: number; why: string };
 	let recommendations = $state<Rec[]>([]);
 
+	// Model refinement runs in the background: the heuristic set lands instantly so
+	// she can start reviewing, and the model's sharper set is OFFERED when it
+	// arrives rather than swapped in — replacing keywords she has already toggled
+	// would silently discard her choices.
+	let refining = $state(false);
+	let refined = $state<ExtractedKeyword[] | null>(null);
+
+	async function pollRefine(jobId: string) {
+		refining = true;
+		refined = null;
+		const deadline = Date.now() + 60_000;
+		try {
+			while (Date.now() < deadline) {
+				await new Promise((r) => setTimeout(r, 900));
+				const res = await fetch(`/api/jobs/${jobId}`);
+				if (!res.ok) return;
+				const job = (await res.json()) as {
+					status: string;
+					result?: { keywords: ExtractedKeyword[] } | null;
+				};
+				if (job.status === 'done' && job.result?.keywords?.length) {
+					refined = job.result.keywords;
+					return;
+				}
+				// 'failed' means the model didn't answer — the heuristic set on screen
+				// is still perfectly usable, so this is quiet, not an error banner.
+				if (job.status === 'failed' || job.status === 'gone') return;
+			}
+		} finally {
+			refining = false;
+		}
+	}
+
+	function useRefined() {
+		if (!refined) return;
+		keywords = refined.map((k) => ({ ...k, included: true }));
+		mode = 'ollama';
+		refined = null;
+	}
+
 	const includedCount = $derived(keywords.filter((k) => k.included).length);
 
 	function addCustom() {
@@ -76,12 +116,16 @@
 			return async ({ result }) => {
 				extracting = false;
 				if (result.type === 'success' && result.data) {
-					const ex = (result.data as { extracted?: { keywords: ExtractedKeyword[]; mode: string } })
-						.extracted;
+					const ex = (
+						result.data as {
+							extracted?: { keywords: ExtractedKeyword[]; mode: string; refineJobId: string | null };
+						}
+					).extracted;
 					if (ex) {
 						keywords = ex.keywords.map((k) => ({ ...k, included: true }));
 						mode = ex.mode;
 						reviewing = true;
+						if (ex.refineJobId) pollRefine(ex.refineJobId);
 					}
 					recommendations = (result.data as { recommendations?: Rec[] }).recommendations ?? [];
 				} else if (result.type === 'failure') {
@@ -138,9 +182,23 @@
 				<h2>Keywords</h2>
 				<span class="count">{includedCount} kept</span>
 			</div>
+			{#if refining}
+				<p class="dim" style="margin-top:-0.4rem">⏳ Refining with the model in the background — these are usable now.</p>
+			{:else if refined}
+				<div class="banner info" style="margin:0 0 0.75rem">
+					The model finished — {refined.length} sharper keywords are ready.
+					<button type="button" class="btn" style="margin-left:0.5rem" onclick={useRefined}>
+						Use them
+					</button>
+					<button type="button" class="btn-ghost" onclick={() => (refined = null)}>Keep mine</button>
+				</div>
+			{/if}
 			<p class="muted" style="margin-top:-0.4rem">
 				Tap to toggle. Ranked by weight; <span style="color:var(--blue)">hard</span> vs
 				<span style="color:var(--orange)">soft</span> shown. Extracted via <strong>{mode}</strong>.
+				{#if mode === 'heuristic' && !refining && !refined}
+					<span class="dim">— the offline extractor. The model either isn't configured or didn't answer.</span>
+				{/if}
 			</p>
 
 			<div class="chips" style="margin-top:0.75rem">

@@ -23,6 +23,34 @@ export function resumeText(doc: ResumeDocument): string {
 	return parts.join(' \n ').toLowerCase();
 }
 
+/** The sentence the tailorer appends to a summary ("Targeting X at Y, …"). */
+export const TARGETING_RE = /\s*Targeting [^.]*\.\s*$/;
+
+export function stripTargetingLine(summary: string): string {
+	return summary.replace(TARGETING_RE, '').trim();
+}
+
+/**
+ * The text a claim can be checked against: what the person has actually DONE.
+ *
+ * Deliberately excludes `basics.label` and the generated targeting sentence.
+ * Both are written BY the tailorer, so including them lets a claim serve as its
+ * own evidence — which is how a product manager scored a full 15/15 "Title
+ * match" against a Staff Platform Engineer posting.
+ */
+export function evidenceText(doc: ResumeDocument): string {
+	const parts: string[] = [stripTargetingLine(doc.basics.summary ?? '')];
+	for (const w of doc.work) {
+		parts.push(w.position ?? '', w.name ?? '', w.summary ?? '', ...(w.highlights ?? []));
+	}
+	for (const e of doc.education) parts.push(e.institution ?? '', e.area ?? '', e.studyType ?? '');
+	for (const s of doc.skills) parts.push(s.name ?? '', ...(s.keywords ?? []));
+	for (const c of doc.certificates) parts.push(c.name ?? '', c.issuer ?? '');
+	for (const p of doc.projects) parts.push(p.name ?? '', p.description ?? '', ...(p.highlights ?? []), ...(p.keywords ?? []));
+	for (const s of doc.x_petedio.stories ?? []) parts.push(s.situation, s.task, s.action, s.result);
+	return parts.join(' \n ').toLowerCase();
+}
+
 function escapeRe(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -85,13 +113,19 @@ export function computeAtsScore(doc: ResumeDocument): AtsScore {
 	const softMax = 15;
 	const softGot = soft.length ? Math.round((wmatch(soft) / wsum(soft)) * softMax) : 0;
 
-	// Title match — does the resume label/text reflect the target job title?
+	// Title match — does the WORK HISTORY reflect the target job title?
+	//
+	// Scored against evidence, not against basics.label: the label is an
+	// aspiration field that tailoring itself fills with the target title, so
+	// scoring it was circular — write the title, read the title back, collect
+	// 15/15. A product manager tailoring to a platform role scored full marks
+	// on a title she had never held.
 	const titleMax = 15;
 	const jobTitle = (doc.x_petedio.targetJob?.title ?? '').toLowerCase();
-	const label = (doc.basics.label ?? '').toLowerCase();
+	const evidence = evidenceText(doc);
 	const titleWords = jobTitle.split(/\s+/).filter((w) => w.length > 2);
 	const titleGot = titleWords.length
-		? Math.round((titleWords.filter((w) => label.includes(w) || text.includes(w)).length / titleWords.length) * titleMax)
+		? Math.round((titleWords.filter((w) => evidence.includes(w)).length / titleWords.length) * titleMax)
 		: 0;
 
 	// Education / certs — only scored when the JD actually names one.

@@ -8,11 +8,21 @@
 import type { ExtractedKeyword, ResumeDocument, Story } from '../../resume/schema';
 import type { QaKind, ReuseCandidate, ReuseMatch, TargetJob } from './generate';
 
+/** What produced a keyword set — the model, or the deterministic fallback. */
+export type KeywordSource = 'ollama' | 'heuristic';
+
 export interface AiProvider {
 	readonly mode: 'demo' | 'ollama';
 
-	/** T1 — extract weighted ATS keywords from a job description. */
-	extractKeywords(jdText: string): Promise<{ keywords: ExtractedKeyword[] }>;
+	/**
+	 * T1 — extract weighted ATS keywords from a job description.
+	 *
+	 * `source` is what ACTUALLY produced these keywords, not which provider was
+	 * configured: the Ollama lane degrades to the heuristic on any failure, and
+	 * reporting the configured mode there told the user "Extracted via ollama"
+	 * over heuristic output — hiding a timeout that fired on every request.
+	 */
+	extractKeywords(jdText: string): Promise<{ keywords: ExtractedKeyword[]; source: KeywordSource }>;
 
 	/** T2 — tailor the master profile to a job. */
 	tailorResume(input: {

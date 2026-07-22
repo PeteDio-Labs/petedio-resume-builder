@@ -112,3 +112,53 @@ describe('lintResume', () => {
 		expect(f.some((x) => /first person/i.test(x.message))).toBe(true);
 	});
 });
+
+describe('Title match must not score its own output (UAT)', () => {
+	// Live defect: tailoring wrote the target title into basics.label, and the
+	// scorer read basics.label back as evidence — a product manager scored a full
+	// 15/15 "Title match" against a Staff Platform Engineer posting, taking the
+	// total from 0 to 64 on a resume with no platform experience anywhere.
+	const pmResume = () => {
+		const d = emptyProfile();
+		d.basics.summary = 'Product manager with 7+ years shipping zero-to-one products.';
+		d.work = [
+			{
+				name: 'Acme', position: 'Senior Product Manager', location: '', url: '', startDate: '', endDate: '',
+				summary: '', highlights: ['Led an 8-engineer team to ship a payments platform.']
+			}
+		];
+		d.x_petedio.targetJob = { title: 'Staff Platform Engineer', company: 'Vertex' };
+		d.x_petedio.keywords = { extracted: [{ term: 'kubernetes', aliases: [], kind: 'hard', weight: 100 }], matched: [], missing: [] };
+		return d;
+	};
+
+	it('does not award a full title match for a label the tailorer wrote', () => {
+		const d = pmResume();
+		d.basics.label = 'Staff Platform Engineer'; // what tailoring used to force
+		const title = computeAtsScore(d).components.find((c) => c.label === 'Title match')!;
+		expect(title.got).toBeLessThan(title.max);
+	});
+
+	it('ignores the generated targeting sentence as evidence', () => {
+		const d = pmResume();
+		d.basics.summary += ' Targeting Staff Platform Engineer at Vertex, bringing infrastructure.';
+		const withLine = computeAtsScore(d).components.find((c) => c.label === 'Title match')!.got;
+		const bare = pmResume();
+		const without = computeAtsScore(bare).components.find((c) => c.label === 'Title match')!.got;
+		expect(withLine).toBe(without);
+	});
+
+	it('still credits a title the work history actually shows', () => {
+		const d = emptyProfile();
+		d.work = [
+			{
+				name: 'Vertex', position: 'Staff Platform Engineer', location: '', url: '', startDate: '', endDate: '',
+				summary: '', highlights: ['Ran the Kubernetes migration.']
+			}
+		];
+		d.x_petedio.targetJob = { title: 'Staff Platform Engineer', company: 'Other' };
+		d.x_petedio.keywords = { extracted: [{ term: 'kubernetes', aliases: [], kind: 'hard', weight: 100 }], matched: [], missing: [] };
+		const title = computeAtsScore(d).components.find((c) => c.label === 'Title match')!;
+		expect(title.got).toBe(title.max);
+	});
+});

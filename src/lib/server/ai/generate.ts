@@ -6,7 +6,7 @@
  * story bank, or JD. Nothing is invented (the plan's hard rule). The real
  * Ollama lane slots in behind the same AiProvider methods.
  */
-import { resumeText } from '../../resume/analyze';
+import { evidenceText, resumeText, stripTargetingLine } from '../../resume/analyze';
 import type { ExtractedKeyword, ResumeDocument, Story } from '../../resume/schema';
 import type { QaKind } from '../../applications';
 import { cosine, embedText } from './embed';
@@ -60,10 +60,23 @@ export function pickDistinctKeywords(
 	return picked;
 }
 
+/** Does the profile actually back this term? Every word of it must appear. */
+function isEvidenced(term: string, evidence: string): boolean {
+	const words = term.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+	return words.length > 0 && words.every((w) => evidence.includes(w));
+}
+
 /**
- * Tailor the master profile to a job: mirror the title, add a targeting line to
- * the summary using top hard keywords, and reorder each role's bullets so the
- * keyword-bearing ones lead. Reorders/annotates — never fabricates.
+ * Tailor the master profile to a job: mirror the title WHERE THE HISTORY SUPPORTS
+ * IT, add a targeting line built only from keywords the profile can back, and
+ * reorder each role's bullets so the keyword-bearing ones lead.
+ *
+ * Reorders/annotates — never fabricates. That rule used to leak here: the
+ * targeting line appended the JD's top keywords verbatim, so a product manager
+ * tailoring to a platform role got "bringing infrastructure, kubernetes,
+ * terraform" — three skills she has never had — and `basics.label` was
+ * overwritten with the target title, which the ATS scorer then read back as a
+ * full title match. The resume asserted a career the profile did not contain.
  */
 export function tailorResumeDeterministic(
 	profile: ResumeDocument,
@@ -71,15 +84,30 @@ export function tailorResumeDeterministic(
 	keywords: ExtractedKeyword[]
 ): ResumeDocument {
 	const doc: ResumeDocument = structuredClone(profile);
+	const evidence = evidenceText(doc);
 
-	doc.basics.label = job.title || doc.basics.label || '';
+	// Mirror the target title only if the history shows that kind of work;
+	// otherwise keep her own headline rather than claiming the new one.
+	const titleEvidenced = job.title ? isEvidenced(job.title, evidence) : false;
+	doc.basics.label = titleEvidenced ? job.title : doc.basics.label || '';
 
-	const topHard = pickDistinctKeywords(keywords, job.title ?? '', 3);
-	const base = (doc.basics.summary ?? '').trim();
+	const candidates = pickDistinctKeywords(keywords, job.title ?? '', 6);
+	const backed = candidates.filter((t) => isEvidenced(t, evidence)).slice(0, 3);
+	const unbacked = candidates.filter((t) => !isEvidenced(t, evidence)).slice(0, 3);
+
+	const base = stripTargetingLine(doc.basics.summary ?? '');
 	const targetLine =
 		`Targeting ${job.title || 'this role'}${job.company ? ' at ' + job.company : ''}` +
-		(topHard.length ? `, bringing ${topHard.join(', ')}.` : '.');
-	doc.basics.summary = base ? `${base} ${targetLine}` : targetLine;
+		(backed.length ? `, bringing ${backed.join(', ')}.` : '.');
+	const gapNote =
+		!backed.length && unbacked.length
+			? ' ' +
+				gap(
+					`this job asks for ${unbacked.join(', ')} — nothing in your profile covers that yet; ` +
+						`add real experience or drop this application`
+				)
+			: '';
+	doc.basics.summary = (base ? `${base} ${targetLine}` : targetLine) + gapNote;
 
 	const terms = keywords.map((k) => k.term.toLowerCase());
 	const bulletScore = (b: string) => terms.reduce((s, t) => s + (b.toLowerCase().includes(t) ? 1 : 0), 0);
@@ -112,6 +140,12 @@ function asClause(sentence: string): string {
 	return sentence.charAt(0).toLowerCase() + sentence.slice(1);
 }
 
+/** Free-text the user typed mid-sentence — give it terminal punctuation. */
+function endSentence(s: string): string {
+	const t = s.trim();
+	return /[.!?]$/.test(t) ? t : `${t}.`;
+}
+
 export function coverLetterDeterministic(
 	resume: ResumeDocument,
 	whyThisCompany: string
@@ -128,11 +162,14 @@ export function coverLetterDeterministic(
 		`Dear ${company} Hiring Team,`,
 		``,
 		`I'm excited to apply for ${title} at ${company}. ` +
-			(why ? why : gap(`add one line on why ${company} specifically — recruiters check for this`)),
+			(why ? endSentence(why) : gap(`add one line on why ${company} specifically — recruiters check for this`)),
 		``,
 		// Achievement paragraph — built ONLY from a real bullet. No invented claim.
+		// The "I" is load-bearing: bullets are written subjectless ("Led an
+		// 8-engineer team"), so splicing one in raw produced "In my recent work at
+		// Acme Corp, led an 8-engineer team" — a sentence with no subject.
 		topBullet
-			? `In my recent work${firstJob?.name ? ' at ' + firstJob.name : ''}, ${asClause(topBullet)}${topBullet.endsWith('.') ? '' : '.'}`
+			? `In my recent work${firstJob?.name ? ' at ' + firstJob.name : ''}, I ${asClause(topBullet)}${topBullet.endsWith('.') ? '' : '.'}`
 			: gap('add one specific achievement for this role — your profile has no work history to draw from yet'),
 		matched.length ? `My background maps closely to what you're looking for — ${matched.join(', ')}.` : '',
 		``,
@@ -154,6 +191,45 @@ export function coverLetterDeterministic(
  * from the wrong story.
  */
 export const MIN_STORY_SIMILARITY = 0.25;
+
+/**
+ * Work out what KIND of question this is from its text.
+ *
+ * The behavioral guard below ("never answer without a real story") is keyed on
+ * `kind`, and `kind` came straight from a dropdown that defaults to `custom` —
+ * so "Tell me about a time you had to let a teammate go" sailed past the guard
+ * and got answered with a generic profile blurb. A protection that only works
+ * when the user classifies their own question correctly is not a protection.
+ */
+export function classifyQuestion(question: string): QaKind {
+	const q = question.toLowerCase();
+
+	// Behavioral first: it carries the strongest honesty constraint, so when a
+	// question could read either way, prefer the branch that refuses to invent.
+	if (
+		/\btell me about a time\b|\bdescribe a (time|situation)\b|\bgive (me )?an example\b|\ba time when\b|\bwalk me through a\b|\bhow did you (handle|deal with|respond)\b|\bhave you ever had to\b/.test(q)
+	) {
+		return 'behavioral';
+	}
+	if (/\bwhy (do you want to |would you like to )?(work|join)\b|\bwhy (us|this company|here)\b|\bwhat (draws|attracts) you\b/.test(q)) {
+		return 'why-us';
+	}
+	if (/\bhow many years\b|\bexperience (with|in)\b|\bhave you (used|worked with)\b|\bare you familiar with\b|\brate your\b/.test(q)) {
+		return 'experience';
+	}
+	if (/\bnotice period\b|\bsalary\b|\bcompensation\b|\brelocat|\bstart date\b|\bvisa\b|\bwork authoriz|\bsponsorship\b|\bavailable to start\b|\bremote or\b/.test(q)) {
+		return 'logistics';
+	}
+	return 'custom';
+}
+
+/**
+ * The kind to actually generate with. An explicit pick wins; `custom` is the
+ * form default, so treat it as "not chosen" and read the question instead.
+ */
+export function resolveQaKind(explicit: QaKind, question: string): QaKind {
+	return explicit === 'custom' ? classifyQuestion(question) : explicit;
+}
 
 /** Pick the story that best matches a question, or null if none is relevant. */
 export function matchStory(question: string, stories: Story[]): Story | null {
@@ -198,17 +274,23 @@ export function answerQuestionDeterministic(input: {
 			`I'm drawn to ${company} because ${why}. It aligns with my background` +
 			`${input.resume.basics.label ? ' as a ' + input.resume.basics.label : ''}, and I'm eager to contribute.`;
 	} else {
-		// Assemble only from facts that actually exist.
+		// Assemble only from facts that actually exist. This branch answers with a
+		// profile digest, which is a reasonable fallback for an open-ended prompt
+		// and a NON-ANSWER for anything specific — so say what it is rather than
+		// letting a digest pass as a reply to a question it never addressed.
 		const top = input.profile.work[0];
-		const summary = (input.profile.basics.summary ?? '').trim();
+		const summary = stripTargetingLine(input.profile.basics.summary ?? '');
 		const recent = top?.highlights?.[0]
-			? `Most recently${top.name ? ' at ' + top.name : ''}, ${asClause(top.highlights[0])}`
+			? `Most recently${top.name ? ' at ' + top.name : ''}, I ${asClause(top.highlights[0])}`
 			: '';
 		const parts = [summary, recent].filter(Boolean);
 		if (parts.length === 0) {
 			return gap('your profile has no summary or work history to answer from yet — add them, then re-draft');
 		}
-		ans = parts.join(' ');
+		ans =
+			gap('generic draft — this is your background, not an answer to the question; edit it to actually respond') +
+			' ' +
+			parts.join(' ');
 	}
 
 	ans = ans.replace(/\s+/g, ' ').trim();
@@ -247,6 +329,13 @@ export interface ReuseMatch {
 	why: string;
 }
 
+/**
+ * Floor for suggesting an existing resume. Below this the overlap is noise, and
+ * a wrong suggestion is worse than none — it invites reusing a resume aimed at
+ * a different career.
+ */
+export const MIN_REUSE_SCORE = 55;
+
 export function recommendReuseDeterministic(jdText: string, candidates: ReuseCandidate[]): ReuseMatch[] {
 	const jv = embedText(jdText);
 	return candidates
@@ -257,12 +346,17 @@ export function recommendReuseDeterministic(jdText: string, candidates: ReuseCan
 				title: c.title,
 				score,
 				why:
-					score >= 60
+					score >= 70
 						? `Strong overlap with "${c.title}" — reuse or remix it instead of starting fresh.`
 						: `Some overlap with "${c.title}".`
 			};
 		})
-		.filter((m) => m.score > 0)
+		// Only surface a candidate worth actually reusing. At `> 0` a platform
+		// engineering JD offered a Director of Product resume at 41% "reuse it
+		// instead of starting fresh" — bag-of-words gives almost any two
+		// documents a non-trivial score, so a low bar reads as a confident
+		// recommendation for an irrelevant resume.
+		.filter((m) => m.score >= MIN_REUSE_SCORE)
 		.sort((a, b) => b.score - a.score);
 }
 

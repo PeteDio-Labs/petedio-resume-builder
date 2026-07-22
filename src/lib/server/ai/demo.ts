@@ -19,7 +19,7 @@ export function demoAiProvider(): AiProvider {
 	return {
 		mode: 'demo',
 		async extractKeywords(jdText) {
-			return { keywords: extractKeywordsHeuristic(jdText) };
+			return { keywords: extractKeywordsHeuristic(jdText), source: 'heuristic' as const };
 		},
 		async tailorResume({ profile, job, keywords }) {
 			return { doc: tailorResumeDeterministic(profile, job, keywords) };

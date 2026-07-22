@@ -7,6 +7,7 @@ import {
 	saveQaAnswer,
 	setApplicationStatus
 } from '$lib/server/applications';
+import { resolveQaKind } from '$lib/server/ai/generate';
 import type { Actions, PageServerLoad } from './$types';
 
 const KINDS: QaKind[] = ['why-us', 'behavioral', 'experience', 'logistics', 'custom'];
@@ -32,7 +33,12 @@ export const actions: Actions = {
 		const question = String(form.get('question') ?? '').trim();
 		if (!question) return fail(400, { message: 'Enter a question first.' });
 		const kindRaw = String(form.get('kind') ?? 'custom');
-		const kind = (KINDS as string[]).includes(kindRaw) ? (kindRaw as QaKind) : 'custom';
+		const picked = (KINDS as string[]).includes(kindRaw) ? (kindRaw as QaKind) : 'custom';
+		// `custom` is the form default, i.e. "the user didn't choose" — so read the
+		// question instead. Otherwise an obviously behavioral question ("tell me
+		// about a time…") skips the no-story-no-answer guard purely because a
+		// dropdown was left alone.
+		const kind = resolveQaKind(picked, question);
 		const targetChars = Math.max(0, Math.min(5000, Number(form.get('targetChars') ?? 0) || 0));
 		const entry = await addQaAnswer(locals.user.email, params.id, {
 			question,

@@ -266,3 +266,32 @@ Senior Recruiter, Acme — 2020-2022
 		expect(Date.now() - start).toBeLessThan(1000);
 	});
 });
+
+describe('role headings separated by a plain hyphen (UAT)', () => {
+	// Live import: "Helio Data - Senior Infrastructure Engineer" landed whole in
+	// the position field with the company blank. The em-dash form already worked.
+	it('splits "Company - Position"', () => {
+		const { doc } = parseResumeText(`Marcus Webb
+marcus.webb@example.com
+
+EXPERIENCE
+
+Helio Data - Senior Infrastructure Engineer
+Jun 2017 - Feb 2021
+- Built the Terraform module library used by every product team.`);
+		expect(doc.work[0].position).toBe('Senior Infrastructure Engineer');
+		expect(doc.work[0].name).toBe('Helio Data');
+	});
+
+	it('leaves a hyphenated job title intact', () => {
+		const { doc } = parseResumeText(`Marcus Webb
+
+EXPERIENCE
+
+Full-Stack Engineer, Helio Data
+Jun 2017 - Feb 2021
+- Shipped things.`);
+		expect(doc.work[0].position).toBe('Full-Stack Engineer');
+		expect(doc.work[0].name).toBe('Helio Data');
+	});
+});

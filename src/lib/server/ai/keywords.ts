@@ -41,14 +41,31 @@ const SOFT_SKILLS = new Set([
 // Headers that mark a "must-have" section — terms under these weigh more.
 const REQ_HEADER = /(requirements|qualifications|what you.ll bring|what we.re looking for|must have|skills)/i;
 
+// Résumé-speak that scores as a keyword but means nothing to a human reader.
+// A JD says "proven track record" and "deep experience"; nobody lists "proven"
+// on a resume, so these only ever show up as noise in the missing-keywords list.
+const FILLER = new Set([
+	'proven', 'demonstrated', 'excellent', 'strong', 'solid', 'deep', 'extensive', 'exceptional',
+	'comfortable', 'familiar', 'experience', 'experienced', 'background', 'level', 'expert',
+	'expertise', 'knowledge', 'understanding', 'ability', 'skills', 'skill', 'track', 'record',
+	'improving', 'including', 'using', 'working', 'various', 'multiple', 'related', 'relevant',
+	'plus', 'bonus', 'preferred', 'ideal', 'ideally', 'nice', 'must', 'years', 'year'
+]);
+
 const WORD_RE = /[a-z0-9][a-z0-9+#.]*/gi;
 
 function tokenize(line: string): string[] {
-	return (line.toLowerCase().match(WORD_RE) ?? []).filter(
-		// drop stopwords, single chars, and anything starting with a digit
-		// ("5+", "401k", version numbers) — none are useful ATS keywords.
-		(w) => w.length >= 2 && !STOPWORDS.has(w) && !/^\d/.test(w)
-	);
+	return (line.toLowerCase().match(WORD_RE) ?? [])
+		// The character class allows a trailing '.' so "node.js" survives — but at
+		// the end of a sentence it also produced "tooling.", "experience." and
+		// "level." as distinct keywords, which then read as missing on every
+		// resume because no one writes a full stop inside a skill.
+		.map((w) => w.replace(/\.+$/, ''))
+		.filter(
+			// drop stopwords, filler, single chars, and anything starting with a
+			// digit ("5+", "401k", version numbers) — none are useful ATS keywords.
+			(w) => w.length >= 2 && !STOPWORDS.has(w) && !FILLER.has(w) && !/^\d/.test(w)
+		);
 }
 
 function classify(term: string): KeywordKind {

@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { isDemoMode } from '$lib/server/config';
-import { createResumeDraft, extractJobKeywords, recommendForJd } from '$lib/server/resumes';
+import { createResumeDraft, extractJobKeywordsFast, recommendForJd } from '$lib/server/resumes';
 import type { ExtractedKeyword } from '$lib/resume/schema';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -24,11 +24,12 @@ export const actions: Actions = {
 		if (jdText.trim() === '') return fail(400, { message: 'Paste a job description first.' });
 
 		const clipped = jdText.slice(0, MAX_JD);
-		const [{ keywords, mode }, recommendations] = await Promise.all([
-			extractJobKeywords(clipped),
-			recommendForJd(locals.user.email, clipped)
-		]);
-		return { extracted: { keywords, mode, title, company, url, jdText }, recommendations };
+		// Deterministic keywords come back immediately and the model refines in the
+		// background (see extractJobKeywordsFast) — a full model pass is ~5-8s, too
+		// long to hold the page on a spinner before she can start reviewing.
+		const { keywords, mode, refineJobId } = extractJobKeywordsFast(locals.user.email, clipped);
+		const recommendations = await recommendForJd(locals.user.email, clipped);
+		return { extracted: { keywords, mode, refineJobId, title, company, url, jdText }, recommendations };
 	},
 
 	// Persist the reviewed keyword set as a new resume draft.
