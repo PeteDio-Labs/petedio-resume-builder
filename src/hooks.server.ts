@@ -28,12 +28,33 @@ function getDevIdentity(): { email: string } | null {
 	return null;
 }
 
+/**
+ * Never let a browser reuse a stale HTML document.
+ *
+ * The built assets are already content-hashed by Vite (`app.Qc5jP2TG.js`) and
+ * served `immutable` for a year, which is correct — the filename changes when
+ * the content does. The HTML that NAMES those hashes is the part that must stay
+ * fresh: cached, it keeps pointing at the previous deploy's bundles. It shipped
+ * with only an ETag and no cache directive, which leaves the decision to each
+ * browser's heuristics.
+ *
+ * `no-cache` still allows the 304 revalidation round-trip — it means "check
+ * with me first", not "don't store".
+ */
+function noStaleDocuments(response: Response): Response {
+	const type = response.headers.get('content-type') ?? '';
+	if (type.includes('text/html') && !response.headers.has('cache-control')) {
+		response.headers.set('cache-control', 'no-cache');
+	}
+	return response;
+}
+
 export const handle: Handle = async ({ event, resolve }) => {
 	const identity = (await getIdentity(event)) ?? getDevIdentity();
 
 	if (!identity) {
 		event.locals.user = null;
-		return resolve(event);
+		return noStaleDocuments(await resolve(event));
 	}
 
 	// Deny-by-default: a verified identity that isn't allow-listed (nor the demo
@@ -49,5 +70,5 @@ export const handle: Handle = async ({ event, resolve }) => {
 	// identity that flows into locals + the row-scoped repository must be too,
 	// or the same human at two email casings would split into two profiles.
 	event.locals.user = { email: identity.email.toLowerCase() };
-	return resolve(event);
+	return noStaleDocuments(await resolve(event));
 };
