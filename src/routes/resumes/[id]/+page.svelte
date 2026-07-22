@@ -31,7 +31,6 @@
 
 	let whyCompany = $state('');
 	let msg = $state<{ kind: 'ok' | 'err'; text: string } | null>(null);
-	let showPreview = $state(false);
 
 	// Live ATS score + lint — recomputed as she edits (analyze.ts is pure/client-safe).
 	const score = $derived(computeAtsScore(resume));
@@ -55,6 +54,43 @@
 					: 'Below target — cover more keywords.'
 	);
 
+	// Section counts drive both the rail nav and the collapsed group headers: a
+	// count is a completeness signal, so an empty section says so rather than
+	// hiding behind a chevron.
+	const counts = $derived({
+		basics: [resume.basics.name, resume.basics.label, resume.basics.email, resume.basics.phone,
+			resume.basics.summary, resume.basics.location?.city].filter((v) => (v ?? '').trim() !== '').length,
+		work: resume.work.length,
+		skills: resume.skills.length,
+		education: resume.education.length,
+		projects: resume.projects.length,
+		stories: resume.x_petedio.stories?.length ?? 0,
+		letter: (resume.x_petedio.coverLetter?.text ?? '').trim() ? 1 : 0
+	});
+
+	// Ring geometry — one source of truth for both the rail and the sheet.
+	const RING_R = 26;
+	const RING_C = 2 * Math.PI * RING_R;
+	const ringOffset = $derived(RING_C - (RING_C * (score.scored ? score.total : 0)) / 100);
+
+	let sheetOpen = $state(false);
+	let scoreOpen = $state(false);
+
+	// The preview renders the real template at 8.5in and is scaled to the pane,
+	// so the pane shows the document rather than a restyled approximation.
+	let paneWidth = $state(0);
+	const previewScale = $derived(paneWidth ? Math.min(1, paneWidth / 816) : 1);
+
+	// Template choice persists server-side; the segmented control fires the same
+	// action the old "switch to B" button did.
+	async function setTemplate(next: 'A' | 'B') {
+		if (next === template) return;
+		template = next;
+		const body = new FormData();
+		body.set('template', next);
+		await fetch('?/template', { method: 'POST', body }).catch(() => {});
+	}
+
 	function downloadJson() {
 		const blob = new Blob([JSON.stringify(resume, null, 2)], { type: 'application/json' });
 		const a = document.createElement('a');
@@ -67,70 +103,59 @@
 
 <svelte:head><title>{data.targetJob.title || 'Resume'} · Resume Builder</title></svelte:head>
 
-<div class="page no-print">
-	<div class="row" style="margin-bottom:1rem">
-		<a href="/resumes" class="btn-ghost">← Resumes</a>
-		<span class="spacer"></span>
-		<span class="chip">{status}</span>
-	</div>
+<div class="workspace no-print" data-band={score.band}>
+	<!-- ── Rail: nav + the score, always visible while editing (D1/D2) ── -->
+	<aside class="rail">
+		<div class="row" style="gap:0.5rem">
+			<a href="/resumes" class="btn-ghost" style="padding-left:0">← Resumes</a>
+			<span class="spacer"></span>
+			<span class="chip">{status}</span>
+		</div>
 
-	<h1>{data.targetJob.title || 'Untitled resume'}</h1>
-	<p class="muted">{data.targetJob.company || '—'}{data.targetJob.url ? ' · ' : ''}{#if data.targetJob.url}<a href={data.targetJob.url} target="_blank" rel="noopener noreferrer">job link ↗</a>{/if}</p>
+		<button type="button" class="score-ring" onclick={() => (scoreOpen = !scoreOpen)}
+			aria-expanded={scoreOpen} title="Show the score breakdown">
+			<span class="ring">
+				<svg width="54" height="54" viewBox="0 0 62 62" aria-hidden="true">
+					<circle cx="31" cy="31" r={RING_R} fill="none" stroke="rgba(255,255,255,.1)" stroke-width="6" />
+					<circle cx="31" cy="31" r={RING_R} fill="none" stroke={bandColor} stroke-width="6"
+						stroke-linecap="round" stroke-dasharray={RING_C} stroke-dashoffset={ringOffset} />
+				</svg>
+				<b style="color:{bandColor}">{score.scored ? score.total : '—'}</b>
+			</span>
+			<span class="meta">
+				<strong>ATS match</strong>
+				<span>{bandNote}</span>
+			</span>
+		</button>
 
-	{#if data.demo}
-		<div class="banner info" style="margin:1rem 0">🎬 Demo mode — AI runs deterministic stubs; data resets on restart.</div>
-	{/if}
-	{#if !data.hasProfile}
-		<div class="banner warn" style="margin:1rem 0">No master profile yet — <a href="/profile">create one</a> to generate a tailored resume.</div>
-	{/if}
-	{#if msg}
-		<div class={msg.kind === 'ok' ? 'banner ok' : 'banner warn'} style="margin:1rem 0">{msg.text}</div>
-	{/if}
+		<nav class="rail-nav">
+			<div class="nav-label">Sections</div>
+			<a href="#sec-basics">Basics <span class="count" class:empty={counts.basics === 0}>{counts.basics}/6</span></a>
+			<a href="#sec-work">Work experience <span class="count" class:empty={counts.work === 0}>{counts.work}</span></a>
+			<a href="#sec-skills">Skills <span class="count" class:empty={counts.skills === 0}>{counts.skills}</span></a>
+			<a href="#sec-education">Education <span class="count" class:empty={counts.education === 0}>{counts.education}</span></a>
+			<a href="#sec-projects">Projects <span class="count" class:empty={counts.projects === 0}>{counts.projects}</span></a>
+			<a href="#sec-stories">Story bank <span class="count" class:empty={counts.stories === 0}>{counts.stories}</span></a>
+			<a href="#sec-letter">Cover letter <span class="count" class:empty={counts.letter === 0}>{counts.letter}</span></a>
+			<a href="#sec-lint">Lint <span class="count" class:empty={false}>{lint.length}</span></a>
+		</nav>
+	</aside>
 
-	<!-- ATS score card -->
-	<div class="card" style="margin-top:1rem">
-		<div class="row" style="align-items:center; gap:1.25rem">
-			<div style="font-size:2.6rem; font-weight:700; color:{bandColor}; font-variant-numeric:tabular-nums">
-				{score.scored ? score.total : '—'}
-			</div>
-			<div>
-				<div style="font-weight:600">ATS match score</div>
-				<div class="muted">{bandNote}</div>
+	<!-- ── Editor ── -->
+	<main style="min-width:0">
+		<div class="row" style="align-items:flex-start; gap:0.75rem">
+			<div style="min-width:0">
+				<h1 style="font-size:var(--t-display); margin:0">{data.targetJob.title || 'Untitled resume'}</h1>
+				<p class="muted" style="margin:0.15rem 0 0">{data.targetJob.company || '—'}{data.targetJob.url ? ' · ' : ''}{#if data.targetJob.url}<a href={data.targetJob.url} target="_blank" rel="noopener noreferrer">job link ↗</a>{/if}</p>
 			</div>
 		</div>
-		<div style="margin-top:0.9rem; display:flex; flex-direction:column; gap:0.4rem">
-			{#each score.components as c (c.label)}
-				<div class="row" style="gap:0.6rem; align-items:center; opacity:{c.applicable ? 1 : 0.45}">
-					<span class="muted" style="width:11rem; font-size:0.82rem">{c.label}</span>
-					<div style="flex:1; height:8px; background:var(--surface-3); border-radius:99px; overflow:hidden">
-						{#if c.applicable}
-							<div style="height:100%; width:{Math.round((c.got / c.max) * 100)}%; background:var(--blue)"></div>
-						{/if}
-					</div>
-					<span class="dim" style="width:5rem; text-align:right; font-variant-numeric:tabular-nums">
-						{c.applicable ? `${c.got}/${c.max}` : 'n/a'}
-					</span>
-				</div>
-			{/each}
-		</div>
-		{#if score.components.some((c) => !c.applicable)}
-			<p class="dim" style="font-size:0.78rem; margin:0.5rem 0 0">
-				“n/a” components aren't scored against — they're excluded from the total rather than counted as full marks.
-			</p>
-		{/if}
-		{#if score.missing.length}
-			<div style="margin-top:0.9rem">
-				<div class="muted" style="font-size:0.82rem; margin-bottom:0.35rem">Missing keywords ({score.missing.length}):</div>
-				<div class="chips">
-					{#each score.missing.slice(0, 20) as m (m)}<span class="chip" style="border-color:var(--red); color:var(--red)">{m}</span>{/each}
-				</div>
-			</div>
-		{/if}
-	</div>
 
-	<!-- Actions -->
-	<div class="card" style="margin-top:1rem">
-		<div class="row" style="flex-wrap:wrap; gap:0.6rem">
+		<!-- One primary action; the rest step back or move under ⋯ (D4) -->
+		<div class="row" style="margin-top:0.9rem; gap:0.5rem">
+			<a class="btn btn-primary" href={`/resumes/${data.id}/pdf?template=${template}`} data-sveltekit-reload>
+				Download PDF
+			</a>
+
 			<form method="POST" action="?/generate" use:confirmSubmit={
 				dirty
 					? 'Regenerate from your master profile? Your unsaved edits to this resume will be replaced.'
@@ -140,6 +165,7 @@
 				return async ({ result }) => {
 					if (result.type === 'success' && result.data?.resume) {
 						resume = hydrate(result.data.resume as ResumeDocument);
+						baseline = JSON.stringify(resume);
 						revisions = (result.data.revisions as typeof revisions) ?? revisions;
 						status = (result.data.status as string) ?? status;
 						msg = { kind: 'ok', text: 'Tailored resume generated from your master profile.' };
@@ -148,32 +174,78 @@
 					}
 				};
 			}}>
-				<button type="submit" class="btn btn-primary" disabled={!data.hasProfile}>Generate from master profile</button>
+				<button type="submit" class="btn" disabled={!data.hasProfile}>Generate from master profile</button>
 			</form>
 
-			<form method="POST" action="?/template" use:enhance={() => async ({ result }) => {
-				if (result.type === 'success' && result.data?.template) template = result.data.template as 'A' | 'B';
-			}}>
-				<input type="hidden" name="template" value={template === 'A' ? 'B' : 'A'} />
-				<button type="submit" class="btn">Template: {template} (switch to {template === 'A' ? 'B' : 'A'})</button>
-			</form>
-
-			<button type="button" class="btn" onclick={() => (showPreview = !showPreview)}>{showPreview ? 'Hide' : 'Show'} preview</button>
-			<!-- Server-rendered: identical on every browser, and none of the browser
-			     print artefacts (the old Print path baked the page URL + a timestamp
-			     into the resume's text layer). -->
-			<a class="btn btn-primary" href={`/resumes/${data.id}/pdf?template=${template}`} data-sveltekit-reload>
-				Download PDF
-			</a>
-			<button type="button" class="btn" onclick={downloadJson}>Download JSON</button>
+			<button type="button" class="btn preview-only-mobile" onclick={() => (sheetOpen = true)}>Preview</button>
+			<button type="button" class="btn" onclick={downloadJson} title="Download the raw JSON Resume document">JSON</button>
 		</div>
-	</div>
+
+		{#if data.demo}
+			<div class="banner info" style="margin:1rem 0">🎬 Demo mode — AI runs deterministic stubs; data resets on restart.</div>
+		{/if}
+		{#if !data.hasProfile}
+			<div class="banner warn" style="margin:1rem 0">No master profile yet — <a href="/profile">create one</a> to generate a tailored resume.</div>
+		{/if}
+		{#if msg}
+			<div class={msg.kind === 'ok' ? 'banner ok' : 'banner warn'} style="margin:1rem 0">{msg.text}</div>
+		{/if}
+
+		<!-- Keywords: covered reads green, missing is an opportunity with a way to
+		     act on it — not a red chip that looks like a mistake (D3). -->
+		{#if score.scored}
+			<div class="card" style="margin-top:1rem">
+				<div class="row" style="align-items:baseline">
+					<strong style="font-size:var(--t-head)">Keywords to cover</strong>
+					<span class="spacer"></span>
+					<span class="dim" style="font-size:var(--t-micro)">
+						{score.matched.length} of {score.matched.length + score.missing.length} covered
+					</span>
+				</div>
+				<div class="chips" style="margin-top:0.6rem">
+					{#each score.matched.slice(0, 8) as m (m)}
+						<span class="kw-chip covered">{m} ✓</span>
+					{/each}
+					{#each score.missing.slice(0, 12) as m (m)}
+						<a class="kw-chip" href="#sec-skills" title="Add “{m}” where it's true — skills or a bullet">
+							{m} <span class="plus">+</span>
+						</a>
+					{/each}
+				</div>
+			</div>
+		{/if}
+
+		{#if scoreOpen}
+			<div class="card" style="margin-top:1rem">
+				<div class="section-head"><h2>Score breakdown</h2></div>
+				<div style="display:flex; flex-direction:column; gap:0.4rem">
+					{#each score.components as c (c.label)}
+						<div class="row" style="gap:0.6rem; align-items:center; opacity:{c.applicable ? 1 : 0.45}">
+							<span class="muted" style="width:10rem; font-size:0.82rem">{c.label}</span>
+							<div style="flex:1; min-width:4rem; height:8px; background:var(--surface-3); border-radius:99px; overflow:hidden">
+								{#if c.applicable}
+									<div style="height:100%; width:{Math.round((c.got / c.max) * 100)}%; background:{bandColor}"></div>
+								{/if}
+							</div>
+							<span class="dim" style="width:4rem; text-align:right; font-variant-numeric:tabular-nums">
+								{c.applicable ? `${c.got}/${c.max}` : 'n/a'}
+							</span>
+						</div>
+					{/each}
+				</div>
+				{#if score.components.some((c) => !c.applicable)}
+					<p class="dim" style="font-size:0.78rem; margin:0.5rem 0 0">
+						“n/a” components aren't scored against — they're excluded from the total rather than counted as full marks.
+					</p>
+				{/if}
+			</div>
+		{/if}
 
 	<!-- Editor -->
 	<div style="margin-top:1.25rem"><ProfileEditor bind:profile={resume} /></div>
 
 	<!-- Cover letter -->
-	<div class="card" style="margin-top:1rem">
+	<div class="card" id="sec-letter" style="margin-top:1rem">
 		<div class="section-head"><h2>Cover letter</h2></div>
 		<form method="POST" action="?/coverLetter" use:enhance={() => async ({ result }) => {
 			if (result.type === 'success' && typeof result.data?.coverLetter === 'string') {
@@ -192,7 +264,7 @@
 	</div>
 
 	<!-- Lint -->
-	<div class="card" style="margin-top:1rem">
+	<div class="card" id="sec-lint" style="margin-top:1rem">
 		<div class="section-head"><h2>Lint</h2><span class="count">{lint.length}</span></div>
 		{#if lint.length === 0}
 			<p class="muted">No issues — reads clean.</p>
@@ -223,6 +295,7 @@
 			msg = null;
 			return async ({ result }) => {
 				if (result.type === 'success') {
+					baseline = JSON.stringify(resume);
 					revisions = (result.data?.revisions as typeof revisions) ?? revisions;
 					msg = { kind: 'ok', text: 'Saved.' };
 				} else if (result.type === 'failure') {
@@ -251,9 +324,49 @@
 			<button type="submit" class="btn-ghost btn-danger">Delete</button>
 		</form>
 	</div>
+	</main>
+
+	<!-- ── The document itself, live (D1). Rendered at real width and scaled to
+	     the pane, so this is the artefact rather than a restyled copy. ── -->
+	<aside class="preview-pane" bind:clientWidth={paneWidth}>
+		<div class="seg">
+			<button type="button" aria-pressed={template === 'A'} onclick={() => setTemplate('A')}>Template A</button>
+			<button type="button" aria-pressed={template === 'B'} onclick={() => setTemplate('B')}>Template B</button>
+		</div>
+		<div class="preview-scroll">
+			<div class="preview-scale" style="transform:scale({previewScale}); height:{previewScale * 1056}px">
+				<ResumePreview {resume} {template} />
+			</div>
+		</div>
+	</aside>
 </div>
 
-<!-- Print / preview area -->
-<div class="page print-area" style={showPreview ? '' : 'display:none'}>
+<!-- Mobile: the document opens as a sheet — the panel's pattern, not a new one. -->
+{#if sheetOpen}
+	<button class="sheet-backdrop" aria-label="Close preview" onclick={() => (sheetOpen = false)}></button>
+	<div class="sheet" role="dialog" aria-label="Resume preview">
+		<div class="grabber"></div>
+		<div class="row">
+			<strong>Preview</strong>
+			<span class="spacer"></span>
+			<button type="button" class="btn-ghost" onclick={() => (sheetOpen = false)}>Done</button>
+		</div>
+		<div class="seg">
+			<button type="button" aria-pressed={template === 'A'} onclick={() => setTemplate('A')}>A</button>
+			<button type="button" aria-pressed={template === 'B'} onclick={() => setTemplate('B')}>B</button>
+		</div>
+		<div class="preview-scroll" style="flex:1">
+			<div class="preview-scale" style="transform:scale(0.42); height:444px">
+				<ResumePreview {resume} {template} />
+			</div>
+		</div>
+		<a class="btn btn-primary" style="justify-content:center" href={`/resumes/${data.id}/pdf?template=${template}`} data-sveltekit-reload>
+			Download PDF
+		</a>
+	</div>
+{/if}
+
+<!-- Print target (browser print still works; the real export is server-side). -->
+<div class="page print-area" style="display:none">
 	<ResumePreview {resume} {template} />
 </div>
