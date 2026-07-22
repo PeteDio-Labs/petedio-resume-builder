@@ -14,7 +14,8 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"test": "bun test",
-		"seed": "bun run scripts/seed-profile.ts"
+		"seed": "bun run scripts/seed-profile.ts",
+		"seed:workspace": "bun run scripts/seed-workspace.ts"
 	},
 	"dependencies": {
 		"jose": "6.2.3",
