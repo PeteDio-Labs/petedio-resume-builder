@@ -1,6 +1,6 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { isDemoMode } from '$lib/server/config';
-import { createResumeDraft, extractJobKeywords } from '$lib/server/resumes';
+import { createResumeDraft, extractJobKeywords, recommendForJd } from '$lib/server/resumes';
 import type { ExtractedKeyword } from '$lib/resume/schema';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -23,8 +23,12 @@ export const actions: Actions = {
 		const url = String(form.get('url') ?? '');
 		if (jdText.trim() === '') return fail(400, { message: 'Paste a job description first.' });
 
-		const { keywords, mode } = await extractJobKeywords(jdText.slice(0, MAX_JD));
-		return { extracted: { keywords, mode, title, company, url, jdText } };
+		const clipped = jdText.slice(0, MAX_JD);
+		const [{ keywords, mode }, recommendations] = await Promise.all([
+			extractJobKeywords(clipped),
+			recommendForJd(locals.user.email, clipped)
+		]);
+		return { extracted: { keywords, mode, title, company, url, jdText }, recommendations };
 	},
 
 	// Persist the reviewed keyword set as a new resume draft.
@@ -49,8 +53,9 @@ export const actions: Actions = {
 		}
 		if (keywords.length === 0) return fail(400, { message: 'Keep at least one keyword before saving.' });
 
+		let id: string;
 		try {
-			await createResumeDraft(
+			id = await createResumeDraft(
 				locals.user.email,
 				{ title, company, url, jdText: jdText.slice(0, MAX_JD) },
 				keywords
@@ -62,6 +67,7 @@ export const actions: Actions = {
 			});
 		}
 
-		throw redirect(303, '/resumes');
+		// Straight into the tailored-resume editor.
+		throw redirect(303, `/resumes/${id}`);
 	}
 };

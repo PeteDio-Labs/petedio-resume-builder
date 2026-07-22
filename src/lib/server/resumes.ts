@@ -1,13 +1,14 @@
 /**
- * Server-side helpers for tailored resumes — JD intake + keyword extraction
- * (task T1). Keeps the AI provider and the row-scoped repository the single
- * paths, and centralises the "DB / AI might be demo or absent" handling so
- * routes stay thin.
+ * Server-side helpers for tailored resumes — JD intake (T1), tailoring (T2),
+ * ATS score + lint, cover letters (T4), version recommendation (T5), revisions,
+ * and delete. Keeps the AI provider and the row-scoped repository the single
+ * paths.
  */
 import { createAiProvider } from './ai/provider';
 import { isDemoMode } from './config';
 import { createRepository } from './db/repository';
-import { emptyProfile, normalizeProfile, type ExtractedKeyword } from '../resume/schema';
+import { computeAtsScore, lintResume, resumeText, type AtsScore, type LintFinding } from '../resume/analyze';
+import { emptyProfile, normalizeProfile, type ExtractedKeyword, type ResumeDocument } from '../resume/schema';
 
 export interface JobInput {
 	title: string;
@@ -25,7 +26,25 @@ export interface ResumeSummary {
 	updatedAt: string;
 }
 
-/** Run keyword extraction (demo heuristic or Ollama, per the factory). */
+export interface ResumeDetail {
+	id: string;
+	status: string;
+	template: 'A' | 'B';
+	updatedAt: string;
+	hasProfile: boolean;
+	resume: ResumeDocument;
+	score: AtsScore;
+	lint: LintFinding[];
+	coverLetter: string;
+	revisions: { rev: number; label: string; savedAt: string }[];
+	targetJob: { title: string; company: string; url: string; jdText: string };
+	demo: boolean;
+}
+
+export class NoProfileError extends Error {}
+
+/* ---------------- JD intake (T1) ---------------- */
+
 export async function extractJobKeywords(
 	jdText: string
 ): Promise<{ keywords: ExtractedKeyword[]; mode: string }> {
@@ -34,11 +53,37 @@ export async function extractJobKeywords(
 	return { keywords, mode: ai.mode };
 }
 
-/**
- * Create a new resume draft from a job description + the user-approved
- * keywords. The doc is passed through `normalizeProfile` (the validation
- * boundary) before it's stored, so client-supplied keywords are sanitized.
- */
+/** T5 — suggest an existing resume to reuse for a JD (before generating fresh). */
+export async function recommendForJd(
+	email: string,
+	jdText: string
+): Promise<{ id: string; title: string; company: string; score: number; why: string }[]> {
+	if (!jdText.trim()) return [];
+	const repo = createRepository(email);
+	const resumes = await repo.resumes.list();
+	if (resumes.length === 0) return [];
+	const ai = createAiProvider();
+	const { matches } = await ai.recommendReuse({
+		jdText,
+		candidates: resumes.map((r) => ({
+			id: r.id,
+			title: r.x_petedio.targetJob?.title || '(untitled)',
+			text: `${r.x_petedio.targetJob?.jdText ?? ''} ${resumeText(r)}`
+		}))
+	});
+	const byId = new Map(resumes.map((r) => [r.id, r]));
+	return matches
+		.filter((m) => m.score >= 40)
+		.slice(0, 3)
+		.map((m) => ({
+			id: m.id,
+			title: m.title,
+			company: byId.get(m.id)?.x_petedio.targetJob?.company || '',
+			score: m.score,
+			why: m.why
+		}));
+}
+
 export async function createResumeDraft(email: string, job: JobInput, keywords: ExtractedKeyword[]): Promise<string> {
 	const doc = emptyProfile();
 	doc.x_petedio.targetJob = {
@@ -56,7 +101,6 @@ export async function createResumeDraft(email: string, job: JobInput, keywords: 
 	return row.id;
 }
 
-/** List the user's resume drafts as client-safe summaries. Resilient to no DB. */
 export async function listResumes(
 	email: string
 ): Promise<{ resumes: ResumeSummary[]; demo: boolean; dbError: boolean }> {
@@ -79,4 +123,110 @@ export async function listResumes(
 		console.error('listResumes: MongoDB unavailable', err);
 		return { resumes: [], demo: isDemoMode(), dbError: true };
 	}
+}
+
+/* ---------------- detail / editor ---------------- */
+
+export async function getResumeDetail(email: string, id: string): Promise<ResumeDetail | null> {
+	const repo = createRepository(email);
+	const [row, profile, revisions] = await Promise.all([
+		repo.resumes.get(id),
+		repo.profiles.get(),
+		repo.resumes.listRevisions(id)
+	]);
+	if (!row) return null;
+	const resume = normalizeProfile(row);
+	return {
+		id: row.id,
+		status: resume.x_petedio.status ?? 'draft',
+		template: resume.x_petedio.template ?? 'A',
+		updatedAt: new Date(row.updatedAt).toISOString(),
+		hasProfile: Boolean(profile),
+		resume,
+		score: computeAtsScore(resume),
+		lint: lintResume(resume),
+		coverLetter: resume.x_petedio.coverLetter?.text ?? '',
+		revisions: revisions.map((r) => ({
+			rev: r.rev,
+			label: r.label,
+			savedAt: new Date(r.savedAt).toISOString()
+		})),
+		targetJob: {
+			title: resume.x_petedio.targetJob?.title ?? '',
+			company: resume.x_petedio.targetJob?.company ?? '',
+			url: resume.x_petedio.targetJob?.url ?? '',
+			jdText: resume.x_petedio.targetJob?.jdText ?? ''
+		},
+		demo: isDemoMode()
+	};
+}
+
+/** T2 — generate a tailored resume from the master profile + this JD/keywords. */
+export async function generateTailored(email: string, id: string): Promise<void> {
+	const repo = createRepository(email);
+	const [row, profileRow] = await Promise.all([repo.resumes.get(id), repo.profiles.get()]);
+	if (!row) return;
+	if (!profileRow) throw new NoProfileError('Create a master profile first.');
+
+	const resume = normalizeProfile(row);
+	const ai = createAiProvider();
+	const tj = resume.x_petedio.targetJob;
+	const { doc } = await ai.tailorResume({
+		profile: normalizeProfile(profileRow),
+		job: {
+			title: tj?.title ?? '',
+			company: tj?.company ?? '',
+			url: tj?.url,
+			jdText: tj?.jdText,
+			capturedAt: tj?.capturedAt
+		},
+		keywords: resume.x_petedio.keywords?.extracted ?? []
+	});
+	const clean = normalizeProfile(doc);
+	await repo.resumes.update(id, clean);
+	await repo.resumes.saveRevision(id, clean, 'Generated from master profile');
+}
+
+/** Persist an edited resume + snapshot a revision. */
+export async function saveResume(email: string, id: string, docJson: string, label = 'Manual edit'): Promise<void> {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(docJson);
+	} catch {
+		throw new Error('Malformed resume JSON.');
+	}
+	const clean = normalizeProfile(parsed);
+	const repo = createRepository(email);
+	const updated = await repo.resumes.update(id, clean);
+	if (updated) await repo.resumes.saveRevision(id, clean, label);
+}
+
+/** T4 — draft a cover letter and store it on the resume. */
+export async function generateCoverLetter(email: string, id: string, whyThisCompany: string): Promise<string> {
+	const repo = createRepository(email);
+	const row = await repo.resumes.get(id);
+	if (!row) return '';
+	const resume = normalizeProfile(row);
+	const ai = createAiProvider();
+	const { text } = await ai.coverLetter({ resume, whyThisCompany });
+	resume.x_petedio.coverLetter = { text, generatedFrom: ai.mode };
+	await repo.resumes.update(id, normalizeProfile(resume));
+	return text;
+}
+
+export async function setResumeTemplate(email: string, id: string, template: 'A' | 'B'): Promise<void> {
+	const repo = createRepository(email);
+	const row = await repo.resumes.get(id);
+	if (!row) return;
+	const resume = normalizeProfile(row);
+	resume.x_petedio.template = template;
+	await repo.resumes.update(id, normalizeProfile(resume));
+}
+
+export async function softDeleteResume(email: string, id: string): Promise<void> {
+	await createRepository(email).resumes.softDelete(id);
+}
+
+export async function hardDeleteResume(email: string, id: string): Promise<void> {
+	await createRepository(email).resumes.hardDelete(id);
 }

@@ -39,6 +39,26 @@ describe('ScopedApplications', () => {
 		expect((await jane.applications.get(a.id))?.status).toBe('interviewing');
 	});
 
+	it('update can patch the qa[] answers', async () => {
+		const db = createInMemoryDb();
+		const jane = createRepository('jane@x', () => Promise.resolve(db));
+		const a = await jane.applications.create(job('https://jobs.example/q'));
+		expect(a.qa).toEqual([]);
+		const entry = {
+			id: 'q1',
+			question: 'Why us?',
+			kind: 'why-us' as const,
+			context: '',
+			targetChars: 0,
+			storyId: null,
+			answer: 'Because it fits.',
+			updatedAt: new Date().toISOString()
+		};
+		const up = await jane.applications.update(a.id, { qa: [entry] });
+		expect(up?.qa).toHaveLength(1);
+		expect((await jane.applications.get(a.id))?.qa[0].answer).toBe('Because it fits.');
+	});
+
 	it('softDelete hides from get + list', async () => {
 		const db = createInMemoryDb();
 		const jane = createRepository('jane@x', () => Promise.resolve(db));

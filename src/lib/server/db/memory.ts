@@ -79,6 +79,11 @@ export function createInMemoryDb(): Db {
 					}
 					return { acknowledged: true, deletedCount: 0 };
 				},
+				async deleteMany(filter: Doc) {
+					const before = c.length;
+					for (let i = c.length - 1; i >= 0; i--) if (matches(c[i], filter)) c.splice(i, 1);
+					return { acknowledged: true, deletedCount: before - c.length };
+				},
 				find(filter: Doc = {}) {
 					const items = c.filter((d) => matches(d, filter));
 					return { toArray: async () => items.slice() };

@@ -6,9 +6,11 @@
  * This is a first cut — enough to get the resume↔job relationship down; the
  * full pipeline (events, dates, Q&A tab) is planned for later.
  */
-import { isApplicationStatus, type ApplicationStatus } from '../applications';
+import { isApplicationStatus, type ApplicationStatus, type QaEntry, type QaKind } from '../applications';
+import { createAiProvider } from './ai/provider';
 import { isDemoMode } from './config';
 import { createRepository } from './db/repository';
+import { emptyProfile, newId, normalizeProfile } from '../resume/schema';
 
 export interface ApplicationView {
 	id: string;
@@ -80,6 +82,101 @@ export async function linkResume(email: string, id: string, resumeId: string): P
 export async function removeApplication(email: string, id: string): Promise<void> {
 	const repo = createRepository(email);
 	await repo.applications.softDelete(id);
+}
+
+/* ---------------- detail + Q&A (T6) ---------------- */
+
+export interface ApplicationDetail {
+	id: string;
+	url: string;
+	label: string;
+	title: string;
+	company: string;
+	status: ApplicationStatus;
+	resumeId: string | null;
+	resumeTitle: string | null;
+	qa: QaEntry[];
+	hasStories: boolean;
+	demo: boolean;
+}
+
+export async function getApplicationDetail(email: string, id: string): Promise<ApplicationDetail | null> {
+	const repo = createRepository(email);
+	const app = await repo.applications.get(id);
+	if (!app) return null;
+	const [resumes, profileRow] = await Promise.all([repo.resumes.list(), repo.profiles.get()]);
+	const titleById = new Map(resumes.map((r) => [r.id, r.x_petedio.targetJob?.title || '(untitled resume)']));
+	const stories = profileRow ? (normalizeProfile(profileRow).x_petedio.stories ?? []) : [];
+	return {
+		id: app.id,
+		url: app.url,
+		label: labelFor(app),
+		title: app.title,
+		company: app.company,
+		status: app.status,
+		resumeId: app.resumeId,
+		resumeTitle: app.resumeId ? (titleById.get(app.resumeId) ?? null) : null,
+		qa: app.qa ?? [],
+		hasStories: stories.length > 0,
+		demo: isDemoMode()
+	};
+}
+
+/** Draft + save an answer to an application question (T6). */
+export async function addQaAnswer(
+	email: string,
+	id: string,
+	input: { question: string; kind: QaKind; context: string; targetChars: number }
+): Promise<QaEntry | null> {
+	const repo = createRepository(email);
+	const app = await repo.applications.get(id);
+	if (!app) return null;
+
+	const profileRow = await repo.profiles.get();
+	const profile = profileRow ? normalizeProfile(profileRow) : emptyProfile();
+	const resumeRow = app.resumeId ? await repo.resumes.get(app.resumeId) : null;
+	const resume = resumeRow ? normalizeProfile(resumeRow) : profile;
+
+	const ai = createAiProvider();
+	const { answer, storyId } = await ai.answerQuestion({
+		question: input.question,
+		kind: input.kind,
+		context: input.context,
+		targetChars: input.targetChars || undefined,
+		resume,
+		profile,
+		stories: profile.x_petedio.stories ?? []
+	});
+
+	const entry: QaEntry = {
+		id: newId(),
+		question: input.question.slice(0, 2000),
+		kind: input.kind,
+		context: input.context.slice(0, 2000),
+		targetChars: input.targetChars,
+		storyId,
+		answer,
+		updatedAt: new Date().toISOString()
+	};
+	await repo.applications.update(id, { qa: [...(app.qa ?? []), entry] });
+	return entry;
+}
+
+export async function saveQaAnswer(email: string, id: string, qaId: string, answer: string): Promise<void> {
+	const repo = createRepository(email);
+	const app = await repo.applications.get(id);
+	if (!app) return;
+	const qa = (app.qa ?? []).map((e) =>
+		e.id === qaId ? { ...e, answer: answer.slice(0, 20000), updatedAt: new Date().toISOString() } : e
+	);
+	await repo.applications.update(id, { qa });
+}
+
+export async function deleteQaAnswer(email: string, id: string, qaId: string): Promise<void> {
+	const repo = createRepository(email);
+	const app = await repo.applications.get(id);
+	if (!app) return;
+	await repo.applications.update(id, { qa: (app.qa ?? []).filter((e) => e.id !== qaId) });
 }
 
 /** Everything the /applications page needs: the tracked jobs + the resume

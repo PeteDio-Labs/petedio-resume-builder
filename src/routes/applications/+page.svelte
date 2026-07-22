@@ -69,8 +69,8 @@
 				<div class="entry" style="margin:0">
 					<div class="row">
 						<div style="min-width:0">
-							<div style="font-weight:600">{a.label}</div>
-							<a href={a.url} target="_blank" rel="noopener noreferrer" class="dim" style="font-size:0.8rem; word-break:break-all">{a.url} ↗</a>
+							<a href={`/applications/${a.id}`} style="font-weight:600">{a.label}</a>
+							<div><a href={a.url} target="_blank" rel="noopener noreferrer" class="dim" style="font-size:0.8rem; word-break:break-all">{a.url} ↗</a></div>
 						</div>
 						<span class="spacer"></span>
 						<span class="chip" style="border-color:{STATUS_COLOR[a.status]}; color:{STATUS_COLOR[a.status]}">{a.status}</span>
