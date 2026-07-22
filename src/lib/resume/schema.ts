@@ -437,6 +437,23 @@ function normalizeXPetedio(v: unknown): XPetedio {
 			capturedAt: optStr(t.capturedAt, 100)
 		};
 	}
+	if (typeof x.keywords === 'object' && x.keywords !== null) {
+		const k = obj(x.keywords);
+		const kinds: KeywordKind[] = ['hard', 'soft', 'cert', 'title', 'edu'];
+		out.keywords = {
+			extracted: arr(k.extracted, (e) => ({
+				term: str(e.term, 200),
+				aliases: strArr(e.aliases, 50),
+				kind: kinds.includes(e.kind as KeywordKind) ? (e.kind as KeywordKind) : 'hard',
+				weight:
+					typeof e.weight === 'number' && isFinite(e.weight)
+						? Math.min(100, Math.max(0, Math.round(e.weight)))
+						: 0
+			})).filter((e) => e.term.trim() !== ''),
+			matched: strArr(k.matched, MAX_KEYWORDS),
+			missing: strArr(k.missing, MAX_KEYWORDS)
+		};
+	}
 	return out;
 }
 

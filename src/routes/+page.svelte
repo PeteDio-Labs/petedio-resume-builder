@@ -30,6 +30,17 @@
 				<a href="/profile/import" class="btn">Import from a resume</a>
 			</div>
 		</div>
+
+		<div class="card" style="margin-top:1rem">
+			<div class="section-head"><h2>Tailor a resume</h2></div>
+			<p class="muted" style="margin-top:-0.4rem">
+				Paste a job description → extract the ATS keywords that matter → save a tailored draft.
+			</p>
+			<div class="row" style="margin-top:0.75rem">
+				<a href="/resumes/new" class="btn btn-primary">New from job description</a>
+				<a href="/resumes" class="btn">My resumes</a>
+			</div>
+		</div>
 	{:else}
 		<div class="banner warn" style="margin:0.75rem 0">
 			Not provisioned. Sign in via Cloudflare Access.
