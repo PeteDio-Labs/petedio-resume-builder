@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { __resetMemoryDb, createInMemoryDb, seedDemoProfiles } from './memory';
+import { __resetMemoryDb, createInMemoryDb, seedDemoData } from './memory';
 import { createRepository } from './repository';
 import { normalizeProfile } from '../../resume/schema';
 
@@ -47,10 +47,10 @@ describe('createInMemoryDb', () => {
 	});
 });
 
-describe('seedDemoProfiles + repository', () => {
-	it('seeds a synthetic profile per email, idempotently and row-scoped', async () => {
+describe('seedDemoData + repository', () => {
+	it('seeds a populated workspace per email, idempotently and row-scoped', async () => {
 		const db = createInMemoryDb();
-		await seedDemoProfiles(db, ['jane@demo.test', 'JANE@demo.test']); // dup (case) ignored
+		await seedDemoData(db, ['jane@demo.test', 'JANE@demo.test']); // dup (case) ignored
 
 		const jane = createRepository('jane@demo.test', () => Promise.resolve(db));
 		const bob = createRepository('bob@demo.test', () => Promise.resolve(db));
@@ -60,13 +60,27 @@ describe('seedDemoProfiles + repository', () => {
 		expect(janeProfile?.userEmail).toBe('jane@demo.test');
 		expect(janeProfile?.work.length).toBeGreaterThan(0);
 
+		// Tailored resumes, revisions and tracked jobs come with it.
+		const resumes = await jane.resumes.list();
+		expect(resumes.length).toBeGreaterThanOrEqual(2);
+		expect(resumes.every((r) => (r.x_petedio.keywords?.extracted?.length ?? 0) > 0)).toBe(true);
+		expect((await jane.resumes.listRevisions(resumes[0].id)).length).toBeGreaterThan(0);
+
+		const apps = await jane.applications.list();
+		expect(apps.length).toBeGreaterThanOrEqual(3);
+		expect(apps.some((a) => a.resumeId !== null)).toBe(true); // resume↔job relationship
+		expect(apps.some((a) => a.qa.length > 0)).toBe(true); // saved Q&A
+
 		// Bob wasn't seeded — row scoping means he sees nothing.
 		expect(await bob.profiles.get()).toBeNull();
+		expect(await bob.resumes.list()).toHaveLength(0);
+		expect(await bob.applications.list()).toHaveLength(0);
 
 		// Re-seeding doesn't duplicate.
-		await seedDemoProfiles(db, ['jane@demo.test']);
+		await seedDemoData(db, ['jane@demo.test']);
 		const all = await db.collection('profiles').find({ userEmail: 'jane@demo.test' }).toArray();
 		expect(all).toHaveLength(1);
+		expect(await jane.resumes.list()).toHaveLength(resumes.length);
 	});
 });
 
