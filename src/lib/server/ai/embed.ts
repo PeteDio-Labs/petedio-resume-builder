@@ -5,7 +5,21 @@
  * cosine in app code. The real Ollama embed lane can replace `embedText` behind
  * the same shape later.
  */
+import { STOPWORDS } from './keywords';
+
 const DIM = 128;
+
+// Interview questions and STAR stories share a lot of filler ("you", "the",
+// "was", "time"). Without stopword removal an unrelated question ("Are you
+// authorized to work in the US?") scored HIGHER against a story than a
+// genuinely relevant one — the similarity was measuring English, not meaning.
+// Filtering them is what makes a relevance threshold meaningful at all.
+const EXTRA_STOP = new Set([
+	'tell', 'me', 'about', 'time', 'describe', 'give', 'example', 'you', 'your', 'yourself',
+	'us', 'we', 'my', 'i', 'they', 'he', 'she', 'it', 'that', 'this', 'there', 'here',
+	'did', 'does', 'done', 'get', 'got', 'go', 'went', 'make', 'made', 'take', 'took',
+	'so', 'if', 'no', 'yes', 'one', 'two', 'now', 'day', 'days'
+]);
 
 function hash(s: string): number {
 	let h = 2166136261;
@@ -18,7 +32,9 @@ function hash(s: string): number {
 
 export function embedText(text: string): number[] {
 	const v = new Array<number>(DIM).fill(0);
-	const tokens = text.toLowerCase().match(/[a-z0-9]{2,}/g) ?? [];
+	const tokens = (text.toLowerCase().match(/[a-z0-9]{2,}/g) ?? []).filter(
+		(t) => !STOPWORDS.has(t) && !EXTRA_STOP.has(t)
+	);
 	for (const t of tokens) v[hash(t) % DIM] += 1;
 	const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0)) || 1;
 	return v.map((x) => x / norm);

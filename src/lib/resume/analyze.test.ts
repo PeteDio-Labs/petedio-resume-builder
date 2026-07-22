@@ -54,6 +54,44 @@ describe('computeAtsScore', () => {
 	});
 });
 
+describe('computeAtsScore — absent data must not score as perfect (UAT H1)', () => {
+	it('an empty resume with no keywords is NOT scored (was 90/100 "good")', () => {
+		const s = computeAtsScore(emptyProfile());
+		expect(s.scored).toBe(false);
+		expect(s.band).toBe('unscored');
+		expect(s.total).toBe(0);
+	});
+
+	it('marks keyword-less components inapplicable rather than full marks', () => {
+		const s = computeAtsScore(emptyProfile());
+		const byLabel = Object.fromEntries(s.components.map((c) => [c.label, c]));
+		expect(byLabel['Hard-skill coverage'].applicable).toBe(false);
+		expect(byLabel['Hard-skill coverage'].got).toBe(0);
+		expect(byLabel['Soft skills'].applicable).toBe(false);
+		expect(byLabel['Education / certs'].applicable).toBe(false);
+		// Searchability is about the resume itself, so it always applies.
+		expect(byLabel['Searchability'].applicable).toBe(true);
+	});
+
+	it('excludes inapplicable components from the denominator', () => {
+		// Only hard keywords present, all matched, plus full searchability.
+		const d = scored();
+		d.x_petedio.keywords = {
+			extracted: [{ term: 'kubernetes', aliases: [], kind: 'hard', weight: 100 }],
+			matched: [],
+			missing: []
+		};
+		const s = computeAtsScore(d);
+		// hard(50) + title(15) + search(10) apply; soft + edu do not.
+		const live = s.components.filter((c) => c.applicable).map((c) => c.label);
+		expect(live).not.toContain('Soft skills');
+		expect(live).not.toContain('Education / certs');
+		expect(s.scored).toBe(true);
+		expect(s.total).toBeGreaterThan(0);
+		expect(s.total).toBeLessThanOrEqual(100);
+	});
+});
+
 describe('lintResume', () => {
 	it('flags AI-tell words and first-person bullets', () => {
 		const d = emptyProfile();

@@ -14,7 +14,7 @@
 import type { ExtractedKeyword, KeywordKind } from '../../resume/schema';
 
 // Common English + JD-boilerplate words that are never useful keywords.
-const STOPWORDS = new Set([
+export const STOPWORDS = new Set([
 	'the', 'and', 'for', 'with', 'you', 'our', 'are', 'will', 'have', 'this', 'that', 'from', 'your',
 	'has', 'was', 'were', 'their', 'they', 'them', 'able', 'who', 'all', 'any', 'can', 'may', 'not',
 	'but', 'his', 'her', 'she', 'him', 'its', 'out', 'use', 'used', 'using', 'via', 'per', 'etc',

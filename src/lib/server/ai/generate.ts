@@ -98,26 +98,42 @@ export function tailorResumeDeterministic(
 
 /* ---------------- T4: cover letter ---------------- */
 
+/**
+ * A visibly-bracketed gap marker. The honesty rule (plan §2) is that drafts
+ * assemble only facts already in the profile/stories and never invent
+ * experience — so when a fact is missing we say so instead of writing a
+ * plausible-sounding claim the user would have to notice and delete.
+ */
+export function gap(instruction: string): string {
+	return `[${instruction}]`;
+}
+
+function asClause(sentence: string): string {
+	return sentence.charAt(0).toLowerCase() + sentence.slice(1);
+}
+
 export function coverLetterDeterministic(
 	resume: ResumeDocument,
 	whyThisCompany: string
 ): string {
-	const name = resume.basics.name || 'Candidate';
+	const name = resume.basics.name || gap('your name');
 	const title = resume.x_petedio.targetJob?.title || 'the role';
 	const company = resume.x_petedio.targetJob?.company || 'your company';
 	const matched = (resume.x_petedio.keywords?.matched ?? []).slice(0, 3);
 	const firstJob = resume.work[0];
 	const topBullet = firstJob?.highlights?.[0] ?? '';
-	const why = whyThisCompany.trim() || `I admire ${company}'s work and the impact of this role.`;
+	const why = whyThisCompany.trim();
 
 	const lines = [
 		`Dear ${company} Hiring Team,`,
 		``,
-		`I'm excited to apply for ${title} at ${company}. ${why}`,
+		`I'm excited to apply for ${title} at ${company}. ` +
+			(why ? why : gap(`add one line on why ${company} specifically — recruiters check for this`)),
 		``,
-		`In my recent work${firstJob?.name ? ' at ' + firstJob.name : ''}, ${
-			topBullet ? topBullet.charAt(0).toLowerCase() + topBullet.slice(1) : 'I delivered measurable results across the team'
-		}${topBullet.endsWith('.') ? '' : '.'}`,
+		// Achievement paragraph — built ONLY from a real bullet. No invented claim.
+		topBullet
+			? `In my recent work${firstJob?.name ? ' at ' + firstJob.name : ''}, ${asClause(topBullet)}${topBullet.endsWith('.') ? '' : '.'}`
+			: gap('add one specific achievement for this role — your profile has no work history to draw from yet'),
 		matched.length ? `My background maps closely to what you're looking for — ${matched.join(', ')}.` : '',
 		``,
 		`I'd welcome the chance to discuss how I can help ${company}. Thank you for your consideration.`,
@@ -130,7 +146,16 @@ export function coverLetterDeterministic(
 
 /* ---------------- T6: Q&A + story matching ---------------- */
 
-/** Pick the story that best matches a question by embedding cosine. */
+/**
+ * Minimum cosine for a story to count as "about" the question. Hashed
+ * bag-of-words gives a small non-zero score to almost any pair, so a bare
+ * `> 0` check returned an unrelated anecdote for e.g. a salary question.
+ * Below this floor the caller should say it has no match rather than answer
+ * from the wrong story.
+ */
+export const MIN_STORY_SIMILARITY = 0.25;
+
+/** Pick the story that best matches a question, or null if none is relevant. */
 export function matchStory(question: string, stories: Story[]): Story | null {
 	if (!stories.length) return null;
 	const qv = embedText(question);
@@ -140,7 +165,7 @@ export function matchStory(question: string, stories: Story[]): Story | null {
 		const score = cosine(qv, embedText(text));
 		if (!best || score > best.score) best = { story, score };
 	}
-	return best && best.score > 0 ? best.story : null;
+	return best && best.score >= MIN_STORY_SIMILARITY ? best.story : null;
 }
 
 export function answerQuestionDeterministic(input: {
@@ -155,19 +180,35 @@ export function answerQuestionDeterministic(input: {
 	const company = input.resume.x_petedio.targetJob?.company || 'your team';
 	let ans: string;
 
-	if (input.kind === 'behavioral' && input.story) {
+	if (input.kind === 'behavioral') {
+		// Never answer a behavioral question without a real story behind it.
+		if (!input.story) {
+			return gap(
+				'no story in your story bank matches this question yet — add a STAR story to your profile, then re-draft'
+			);
+		}
 		const s = input.story;
 		ans = `${s.situation} ${s.task} ${s.action} ${s.result}${s.metrics ? ' (' + s.metrics + ')' : ''}`;
 	} else if (input.kind === 'why-us') {
-		const why = input.context.trim() || `${company}'s mission and the scope of this role resonate with me`;
+		const why = input.context.trim();
+		if (!why) {
+			return gap(`add one line on why ${company} specifically — a generic answer is what recruiters screen out`);
+		}
 		ans =
 			`I'm drawn to ${company} because ${why}. It aligns with my background` +
 			`${input.resume.basics.label ? ' as a ' + input.resume.basics.label : ''}, and I'm eager to contribute.`;
 	} else {
+		// Assemble only from facts that actually exist.
 		const top = input.profile.work[0];
-		ans =
-			`${input.profile.basics.summary ?? ''} Most recently${top?.name ? ' at ' + top.name : ''}, ` +
-			`${top?.highlights?.[0] ?? 'I delivered strong, measurable results'}.`;
+		const summary = (input.profile.basics.summary ?? '').trim();
+		const recent = top?.highlights?.[0]
+			? `Most recently${top.name ? ' at ' + top.name : ''}, ${asClause(top.highlights[0])}`
+			: '';
+		const parts = [summary, recent].filter(Boolean);
+		if (parts.length === 0) {
+			return gap('your profile has no summary or work history to answer from yet — add them, then re-draft');
+		}
+		ans = parts.join(' ');
 	}
 
 	ans = ans.replace(/\s+/g, ' ').trim();
