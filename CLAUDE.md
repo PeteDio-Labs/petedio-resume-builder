@@ -22,14 +22,29 @@ in `.env.example`.
 ## Layout
 - `src/hooks.server.ts` — Cloudflare Access verification + allow-list gate; sets
   `event.locals.user`.
+- `src/lib/server/config.ts` — the single env-driven config module (12-factor, mirrors the
+  palworld panel's `config.ts`): `isDemoMode()`, `allowedUsers()`, `demoUser()`,
+  `isAllowedEmail()`. Everything that gates on the environment asks here.
 - `src/lib/server/auth.ts` — `getIdentity(event)`; all JWT-verification mechanics live here so
   the mechanism can change later without touching callers.
-- `src/lib/server/db/` — `client.ts` (Mongo singleton, lazy-connect) + `repository.ts`
-  (row-scoped accessors). **Routes must never import `client.ts` directly** — go through
-  `repository.ts` so every read/write is scoped to `userEmail`.
+- `src/lib/server/db/` — `client.ts` (real Mongo singleton, lazy-connect), `memory.ts` (the
+  in-memory **demo** store), `provider.ts` (`resolveDb()` picks real vs demo from `DEMO_MODE`,
+  the analog of the panel's `createApplier()`), and `repository.ts` (row-scoped accessors).
+  **Routes must never import a Db client directly** — go through `repository.ts` so every
+  read/write is scoped to `userEmail`.
+- `src/lib/resume/` — `schema.ts` (JSON Resume v1.x + `x_petedio` types, factories,
+  `normalizeProfile` validation boundary) and `parse.ts` (deterministic paste-import; not AI).
+- `src/lib/server/demo/sample-profile.ts` — synthetic sample profile used to seed demo mode.
+
+## Demo mode
+`DEMO_MODE=true` swaps external deps (MongoDB now, AI later) for in-memory stand-ins so the app
+runs standalone — same idea and shape as the panel's `PANEL_APPLIER=demo`. Selected at one
+factory (`provider.ts`); default OFF; in a production build it only fakes data and never
+bypasses auth. Future AI features should branch on `isDemoMode()` the same way.
 
 ## Source of truth
 **Linear** `PeteDillo`/`PET` — see the **Resume Builder — Planning** doc for full context,
 phased scope (P1 platform / P2+ resume-generation features), and decisions already made
-(stack pins, architecture). This repo currently covers **P1 only**: platform scaffold, not
-resume-tailoring features.
+(stack pins, architecture). Implemented so far: P1 platform scaffold, the P2 master profile
+(CRUD + paste-import parse, JSON Resume + story bank), and demo mode. Resume *tailoring* (the
+Ollama/AI features) is not built yet.

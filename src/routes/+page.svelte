@@ -1,47 +1,42 @@
 <script lang="ts">
-	let { data } = $props();
+	import type { PageData } from './$types';
+
+	let { data }: { data: PageData } = $props();
 </script>
 
-<main>
+<svelte:head><title>Resume Builder</title></svelte:head>
+
+<div class="page">
 	<h1>PeteDio Resume Builder</h1>
 
-	{#if data.user}
-		<p class="status ok">Signed in as {data.user.email}</p>
-	{:else}
-		<p class="status denied">Not provisioned. Sign in via Cloudflare Access.</p>
+	{#if data.demo}
+		<div class="banner info" style="margin:0.75rem 0">
+			🎬 Demo mode — running on an in-memory store with sample data. Nothing is saved to a real
+			database; everything resets when the server restarts.
+		</div>
 	{/if}
 
-	<p class="note">
-		P1 scaffold — platform wiring only. Resume generation is not implemented yet.
+	{#if data.user}
+		<div class="banner ok" style="margin:0.75rem 0">Signed in as {data.user.email}</div>
+
+		<div class="card" style="margin-top:1rem">
+			<div class="section-head"><h2>Master profile</h2></div>
+			<p class="muted" style="margin-top:-0.4rem">
+				Your “everything I've ever done” record. Build it once; every tailored resume derives from
+				it.
+			</p>
+			<div class="row" style="margin-top:0.75rem">
+				<a href="/profile" class="btn btn-primary">Open master profile</a>
+				<a href="/profile/import" class="btn">Import from a resume</a>
+			</div>
+		</div>
+	{:else}
+		<div class="banner warn" style="margin:0.75rem 0">
+			Not provisioned. Sign in via Cloudflare Access.
+		</div>
+	{/if}
+
+	<p class="dim" style="margin-top:1.5rem; font-size:0.85rem">
+		P2 — master profile &amp; import. Resume tailoring, ATS scoring, and export land in later phases.
 	</p>
-</main>
-
-<style>
-	main {
-		max-width: 40rem;
-		margin: 4rem auto;
-		padding: 0 1.5rem;
-		font-family: system-ui, sans-serif;
-	}
-
-	.status {
-		font-size: 1.1rem;
-		padding: 0.75rem 1rem;
-		border-radius: 0.5rem;
-	}
-
-	.status.ok {
-		background: #e6f4ea;
-		color: #1e4620;
-	}
-
-	.status.denied {
-		background: #fdecea;
-		color: #611a15;
-	}
-
-	.note {
-		color: #666;
-		font-size: 0.9rem;
-	}
-</style>
+</div>
