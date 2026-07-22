@@ -149,7 +149,12 @@
 			</form>
 
 			<button type="button" class="btn" onclick={() => (showPreview = !showPreview)}>{showPreview ? 'Hide' : 'Show'} preview</button>
-			<button type="button" class="btn" onclick={() => window.print()}>Print / Save PDF</button>
+			<!-- Server-rendered: identical on every browser, and none of the browser
+			     print artefacts (the old Print path baked the page URL + a timestamp
+			     into the resume's text layer). -->
+			<a class="btn btn-primary" href={`/resumes/${data.id}/pdf?template=${template}`} data-sveltekit-reload>
+				Download PDF
+			</a>
 			<button type="button" class="btn" onclick={downloadJson}>Download JSON</button>
 		</div>
 	</div>

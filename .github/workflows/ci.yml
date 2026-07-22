@@ -22,6 +22,22 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # The PDF golden test renders a resume and reads the text back the way an
+      # ATS would. Without this toolchain that test silently skips — and a
+      # template change that breaks text extraction would ship unnoticed.
+      - name: Install PDF toolchain (typst + poppler)
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq poppler-utils
+          curl -fsSL "https://github.com/typst/typst/releases/download/v${TYPST_VERSION}/typst-x86_64-unknown-linux-musl.tar.xz" -o /tmp/typst.tar.xz
+          tar -xf /tmp/typst.tar.xz -C /tmp
+          sudo install -m 0755 "/tmp/typst-x86_64-unknown-linux-musl/typst" /usr/local/bin/typst
+          typst --version
+          pdftotext -v
+        env:
+          TYPST_VERSION: '0.15.1'
+
       - name: Test
         run: bun test
 
