@@ -15,6 +15,18 @@
 	let saving = $state(false);
 	let status = $state<{ kind: 'ok' | 'err'; text: string } | null>(null);
 
+	// Mirrors the rail on the resume screen: counts are the completeness signal.
+	const counts = $derived({
+		basics: [profile.basics.name, profile.basics.label, profile.basics.email, profile.basics.phone,
+			profile.basics.summary, profile.basics.location?.city].filter((v) => (v ?? '').trim() !== '').length,
+		work: profile.work.length,
+		education: profile.education.length,
+		skills: profile.skills.length,
+		certificates: profile.certificates.length,
+		projects: profile.projects.length,
+		stories: profile.x_petedio.stories?.length ?? 0
+	});
+
 	const savedLabel = $derived(
 		savedAt ? `Last saved ${new Date(savedAt).toLocaleString()}` : 'Not saved yet'
 	);
@@ -30,15 +42,27 @@
 
 <svelte:head><title>Master profile · Resume Builder</title></svelte:head>
 
-<div class="page">
-	<div class="row" style="margin-bottom:1rem">
-		<a href="/" class="btn-ghost">← Home</a>
-		<span class="spacer"></span>
-		<a href="/profile/import" class="btn">Import from a resume</a>
-	</div>
+<div class="workspace">
+	<aside class="rail">
+		<div class="row" style="gap:0.5rem">
+			<a href="/" class="btn-ghost" style="padding-left:0">← Home</a>
+		</div>
+		<nav class="rail-nav">
+			<div class="nav-label">Sections</div>
+			<a href="#sec-basics">Basics <span class="count" class:empty={counts.basics === 0}>{counts.basics}/6</span></a>
+			<a href="#sec-work">Work experience <span class="count" class:empty={counts.work === 0}>{counts.work}</span></a>
+			<a href="#sec-education">Education <span class="count" class:empty={counts.education === 0}>{counts.education}</span></a>
+			<a href="#sec-skills">Skills <span class="count" class:empty={counts.skills === 0}>{counts.skills}</span></a>
+			<a href="#sec-certificates">Certifications <span class="count" class:empty={counts.certificates === 0}>{counts.certificates}</span></a>
+			<a href="#sec-projects">Projects <span class="count" class:empty={counts.projects === 0}>{counts.projects}</span></a>
+			<a href="#sec-stories">Story bank <span class="count" class:empty={counts.stories === 0}>{counts.stories}</span></a>
+		</nav>
+		<a href="/profile/import" class="btn" style="justify-content:center">Import from a resume</a>
+	</aside>
 
-	<h1>Master profile</h1>
-	<p class="muted">
+	<main style="min-width:0">
+	<h1 style="font-size:var(--t-display); margin:0">Master profile</h1>
+	<p class="muted" style="margin:0.15rem 0 0">
 		Your “everything I've ever done” record — every tailored resume derives from it. Edit any
 		section; changes are saved as one document.
 	</p>
@@ -138,4 +162,5 @@
 			</span>
 		{/if}
 	</form>
+</main>
 </div>
