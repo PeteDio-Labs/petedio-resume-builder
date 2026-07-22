@@ -22,6 +22,53 @@
 
 	let { profile = $bindable() }: { profile: ResumeDocument } = $props();
 
+	/**
+	 * Sections collapse (UX plan D6). Every group used to be expanded, always —
+	 * a wall of fields with nothing to navigate it by. Basics stays open because
+	 * it's where you land; the rest announce what they hold via their count.
+	 *
+	 * The count doubles as a completeness signal, so an empty section says so in
+	 * amber rather than hiding behind a chevron.
+	 */
+	let open = $state<Record<string, boolean>>({
+		basics: true,
+		work: false,
+		education: false,
+		skills: false,
+		certificates: false,
+		projects: false,
+		stories: false
+	});
+
+	const filledBasics = $derived(
+		[
+			profile.basics.name,
+			profile.basics.label,
+			profile.basics.email,
+			profile.basics.phone,
+			profile.basics.summary,
+			profile.basics.location?.city
+		].filter((v) => (v ?? '').trim() !== '').length
+	);
+
+	// A rail link points at a collapsed section — open it, or the jump lands on a
+	// closed summary and reads as broken.
+	function openFromHash() {
+		const key = location.hash.replace('#sec-', '');
+		if (!key || !(key in open)) return;
+		open[key] = true;
+		// The browser scrolls to the anchor while it is still collapsed, so the
+		// section ends up mid-viewport once it expands. Re-align after the open.
+		requestAnimationFrame(() => {
+			document.getElementById(`sec-${key}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+		});
+	}
+	$effect(() => {
+		openFromHash();
+		window.addEventListener('hashchange', openFromHash);
+		return () => window.removeEventListener('hashchange', openFromHash);
+	});
+
 	function toggleTag(story: Story, tag: StoryTag) {
 		const i = story.tags.indexOf(tag);
 		if (i >= 0) story.tags.splice(i, 1);
@@ -31,8 +78,9 @@
 
 <div class="stack">
 	<!-- Basics -->
-	<section class="card" id="sec-basics">
-		<div class="section-head"><h2>Basics</h2></div>
+	<details class="group" id="sec-basics" bind:open={open.basics}>
+		<summary><h2>Basics</h2><span class="count" class:empty={filledBasics === 0}>{filledBasics}/6</span></summary>
+		<div class="group-body">
 		<div class="grid-2">
 			<label class="field"><span class="field-label">Name</span>
 				<input type="text" bind:value={profile.basics.name} />
@@ -85,11 +133,13 @@
 			{/each}
 			<button type="button" class="btn-ghost" onclick={() => (profile.basics.profiles ??= []).push({ network: '', url: '' })}>+ Add profile</button>
 		</div>
-	</section>
+		</div>
+	</details>
 
 	<!-- Work -->
-	<section class="card" id="sec-work">
-		<div class="section-head"><h2>Work experience</h2><span class="count">{profile.work.length}</span></div>
+	<details class="group" id="sec-work" bind:open={open.work}>
+		<summary><h2>Work experience</h2><span class="count" class:empty={profile.work.length === 0}>{profile.work.length}</span></summary>
+		<div class="group-body">
 		{#each profile.work as w, i (w)}
 			<div class="entry">
 				<div class="entry-head">
@@ -113,11 +163,13 @@
 			</div>
 		{/each}
 		<button type="button" class="btn" onclick={() => profile.work.push(newWorkItem())}>+ Add role</button>
-	</section>
+		</div>
+	</details>
 
 	<!-- Education -->
-	<section class="card" id="sec-education">
-		<div class="section-head"><h2>Education</h2><span class="count">{profile.education.length}</span></div>
+	<details class="group" id="sec-education" bind:open={open.education}>
+		<summary><h2>Education</h2><span class="count" class:empty={profile.education.length === 0}>{profile.education.length}</span></summary>
+		<div class="group-body">
 		{#each profile.education as e, i (e)}
 			<div class="entry">
 				<div class="entry-head">
@@ -136,11 +188,13 @@
 			</div>
 		{/each}
 		<button type="button" class="btn" onclick={() => profile.education.push(newEducationItem())}>+ Add education</button>
-	</section>
+		</div>
+	</details>
 
 	<!-- Skills -->
-	<section class="card" id="sec-skills">
-		<div class="section-head"><h2>Skills</h2><span class="count">{profile.skills.length}</span></div>
+	<details class="group" id="sec-skills" bind:open={open.skills}>
+		<summary><h2>Skills</h2><span class="count" class:empty={profile.skills.length === 0}>{profile.skills.length}</span></summary>
+		<div class="group-body">
 		{#each profile.skills as s, i (s)}
 			<div class="entry">
 				<div class="entry-head">
@@ -152,11 +206,13 @@
 			</div>
 		{/each}
 		<button type="button" class="btn" onclick={() => profile.skills.push(newSkillItem())}>+ Add skill group</button>
-	</section>
+		</div>
+	</details>
 
 	<!-- Certificates -->
-	<section class="card" id="sec-certificates">
-		<div class="section-head"><h2>Certifications</h2><span class="count">{profile.certificates.length}</span></div>
+	<details class="group" id="sec-certificates" bind:open={open.certificates}>
+		<summary><h2>Certifications</h2><span class="count" class:empty={profile.certificates.length === 0}>{profile.certificates.length}</span></summary>
+		<div class="group-body">
 		{#each profile.certificates as c, i (c)}
 			<div class="entry">
 				<div class="entry-head">
@@ -172,11 +228,13 @@
 			</div>
 		{/each}
 		<button type="button" class="btn" onclick={() => profile.certificates.push(newCertificateItem())}>+ Add certificate</button>
-	</section>
+		</div>
+	</details>
 
 	<!-- Projects -->
-	<section class="card" id="sec-projects">
-		<div class="section-head"><h2>Projects</h2><span class="count">{profile.projects.length}</span></div>
+	<details class="group" id="sec-projects" bind:open={open.projects}>
+		<summary><h2>Projects</h2><span class="count" class:empty={profile.projects.length === 0}>{profile.projects.length}</span></summary>
+		<div class="group-body">
 		{#each profile.projects as p, i (p)}
 			<div class="entry">
 				<div class="entry-head">
@@ -194,13 +252,13 @@
 			</div>
 		{/each}
 		<button type="button" class="btn" onclick={() => profile.projects.push(newProjectItem())}>+ Add project</button>
-	</section>
+		</div>
+	</details>
 
 	<!-- Story bank -->
-	<section class="card" id="sec-stories">
-		<div class="section-head">
-			<h2>Story bank</h2><span class="count">{profile.x_petedio.stories?.length ?? 0}</span>
-		</div>
+	<details class="group" id="sec-stories" bind:open={open.stories}>
+		<summary><h2>Story bank</h2><span class="count" class:empty={(profile.x_petedio.stories?.length ?? 0) === 0}>{profile.x_petedio.stories?.length ?? 0}</span></summary>
+		<div class="group-body">
 		<p class="muted" style="margin-top:-0.4rem">
 			Reusable STAR anecdotes — these power application Q&amp;A answers later. Aim for 4–6, tagged so
 			behavioral questions can auto-match.
@@ -234,5 +292,6 @@
 			</div>
 		{/each}
 		<button type="button" class="btn" onclick={() => (profile.x_petedio.stories ??= []).push(newStory())}>+ Add story</button>
-	</section>
+		</div>
+	</details>
 </div>

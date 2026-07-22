@@ -146,8 +146,13 @@
 		<div class="row" style="align-items:flex-start; gap:0.75rem">
 			<div style="min-width:0">
 				<h1 style="font-size:var(--t-display); margin:0">{data.targetJob.title || 'Untitled resume'}</h1>
-				<p class="muted" style="margin:0.15rem 0 0">{data.targetJob.company || '—'}{data.targetJob.url ? ' · ' : ''}{#if data.targetJob.url}<a href={data.targetJob.url} target="_blank" rel="noopener noreferrer">job link ↗</a>{/if}</p>
+				<p class="muted" style="margin:0.15rem 0 0">{data.targetJob.company || '—'}</p>
 			</div>
+			<span class="spacer"></span>
+			{#if data.targetJob.url}
+				<!-- A real control, not a 17px link buried in a sentence. -->
+				<a class="btn-ghost" href={data.targetJob.url} target="_blank" rel="noopener noreferrer">Job posting ↗</a>
+			{/if}
 		</div>
 
 		<!-- One primary action; the rest step back or move under ⋯ (D4) -->

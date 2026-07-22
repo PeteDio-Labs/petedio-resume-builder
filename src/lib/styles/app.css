@@ -497,16 +497,23 @@ textarea {
    ================================================================== */
 .workspace {
 	display: grid;
-	grid-template-columns: 15rem minmax(0, 1fr) 22rem;
+	/* Two zones by default; the document column only exists where there IS a
+	   document to show, so /profile doesn't reserve an empty 22rem. */
+	grid-template-columns: 15rem minmax(0, 1fr);
 	gap: 1rem;
 	max-width: 90rem;
 	margin: 0 auto;
 	padding: 1.25rem 1.25rem 7rem;
 	align-items: start;
 }
+.workspace:has(.preview-pane) {
+	grid-template-columns: 15rem minmax(0, 1fr) 22rem;
+}
+
 /* Tablet: the document folds away behind a control; editing still needs width. */
 @media (max-width: 1180px) {
-	.workspace {
+	.workspace,
+	.workspace:has(.preview-pane) {
 		grid-template-columns: 14rem minmax(0, 1fr);
 	}
 	.workspace > .preview-pane {
@@ -514,7 +521,8 @@ textarea {
 	}
 }
 @media (max-width: 860px) {
-	.workspace {
+	.workspace,
+	.workspace:has(.preview-pane) {
 		grid-template-columns: minmax(0, 1fr);
 		padding: 1rem 1rem 7rem;
 	}
@@ -637,7 +645,9 @@ textarea {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.4rem;
-	min-height: 34px;
+	/* 44px like every other control — the UAT tap-target work applies to new
+	   components too, and these are among the most tapped things on the page. */
+	min-height: 44px;
 	padding: 0.3rem 0.45rem 0.3rem 0.7rem;
 	border-radius: 999px;
 	font-size: var(--t-label);
