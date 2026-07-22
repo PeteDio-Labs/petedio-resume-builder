@@ -242,6 +242,8 @@ export interface XPetedio {
 		text?: string;
 		generatedFrom?: string;
 	};
+	/** Export template choice — A = ATS-safe, B = styled banner. */
+	template?: 'A' | 'B';
 }
 
 /**
@@ -435,6 +437,14 @@ function normalizeXPetedio(v: unknown): XPetedio {
 			url: optStr(t.url, 2_000),
 			jdText: optStr(t.jdText, 50_000),
 			capturedAt: optStr(t.capturedAt, 100)
+		};
+	}
+	if (x.template === 'A' || x.template === 'B') out.template = x.template;
+	if (typeof x.coverLetter === 'object' && x.coverLetter !== null) {
+		const cl = obj(x.coverLetter);
+		out.coverLetter = {
+			text: optStr(cl.text, 20_000),
+			generatedFrom: optStr(cl.generatedFrom, 200)
 		};
 	}
 	if (typeof x.keywords === 'object' && x.keywords !== null) {

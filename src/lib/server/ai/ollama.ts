@@ -13,6 +13,14 @@
  */
 import { env } from '../config';
 import { extractKeywordsHeuristic } from './keywords';
+import {
+	answerQuestionDeterministic,
+	coverLetterDeterministic,
+	matchStory,
+	recommendReuseDeterministic,
+	rewriteBulletDeterministic,
+	tailorResumeDeterministic
+} from './generate';
 import type { AiProvider } from './types';
 import type { ExtractedKeyword, KeywordKind } from '../../resume/schema';
 
@@ -93,6 +101,27 @@ export function ollamaAiProvider(): AiProvider {
 				console.error('ollamaAiProvider.extractKeywords fell back to heuristic:', err);
 				return { keywords: extractKeywordsHeuristic(jdText) };
 			}
+		},
+
+		// The remaining tasks (T2–T6) don't have real Ollama prompts wired yet —
+		// they use the same deterministic generators as demo mode. When the
+		// inference host is provisioned, replace these bodies with /api/chat calls
+		// (streamed for tailoring/Q&A); the interface stays identical.
+		async tailorResume({ profile, job, keywords }) {
+			return { doc: tailorResumeDeterministic(profile, job, keywords) };
+		},
+		async coverLetter({ resume, whyThisCompany }) {
+			return { text: coverLetterDeterministic(resume, whyThisCompany) };
+		},
+		async answerQuestion(input) {
+			const story = input.kind === 'behavioral' ? matchStory(input.question, input.stories) : null;
+			return { answer: answerQuestionDeterministic({ ...input, story }), storyId: story?.id ?? null };
+		},
+		async rewriteBullet({ text, comment }) {
+			return { rewritten: rewriteBulletDeterministic(text, comment) };
+		},
+		async recommendReuse({ jdText, candidates }) {
+			return { matches: recommendReuseDeterministic(jdText, candidates) };
 		}
 	};
 }

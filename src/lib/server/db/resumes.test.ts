@@ -41,6 +41,21 @@ describe('ScopedResumes', () => {
 		expect(await jane.resumes.list()).toHaveLength(1);
 	});
 
+	it('saveRevision increments, listRevisions is newest-first, hardDelete purges', async () => {
+		const db = createInMemoryDb();
+		const jane = createRepository('jane@x', () => Promise.resolve(db));
+		const r = await jane.resumes.create(draft('PM'));
+		await jane.resumes.saveRevision(r.id, draft('PM v1'), 'first');
+		await jane.resumes.saveRevision(r.id, draft('PM v2'), 'second');
+
+		const revs = await jane.resumes.listRevisions(r.id);
+		expect(revs.map((x) => x.rev)).toEqual([2, 1]);
+
+		await jane.resumes.hardDelete(r.id);
+		expect(await jane.resumes.get(r.id)).toBeNull();
+		expect(await jane.resumes.listRevisions(r.id)).toHaveLength(0);
+	});
+
 	it('update preserves createdAt and enforces ownership', async () => {
 		const db = createInMemoryDb();
 		const jane = createRepository('jane@x', () => Promise.resolve(db));

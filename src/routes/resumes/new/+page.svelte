@@ -23,6 +23,9 @@
 	let saveErr = $state('');
 	let custom = $state('');
 
+	type Rec = { id: string; title: string; company: string; score: number; why: string };
+	let recommendations = $state<Rec[]>([]);
+
 	const includedCount = $derived(keywords.filter((k) => k.included).length);
 
 	function addCustom() {
@@ -80,6 +83,7 @@
 						mode = ex.mode;
 						reviewing = true;
 					}
+					recommendations = (result.data as { recommendations?: Rec[] }).recommendations ?? [];
 				} else if (result.type === 'failure') {
 					extractErr = (result.data?.message as string) ?? 'Could not extract keywords.';
 				} else if (result.type === 'error') {
@@ -111,6 +115,21 @@
 			</button>
 		</div>
 	</form>
+
+	<!-- Reuse/remix recommendation (T5) -->
+	{#if reviewing && recommendations.length}
+		<div class="banner info" style="margin:1rem 0">
+			<strong>You already have a similar resume:</strong>
+			<ul style="margin:0.4rem 0 0; padding-left:1.1rem">
+				{#each recommendations as r (r.id)}
+					<li>
+						<a href={`/resumes/${r.id}`}>{r.title}{r.company ? ` — ${r.company}` : ''}</a>
+						<span class="dim">({r.score}% match) — reuse it instead of starting fresh.</span>
+					</li>
+				{/each}
+			</ul>
+		</div>
+	{/if}
 
 	<!-- Step 2: review keywords -->
 	{#if reviewing}

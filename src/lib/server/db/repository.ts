@@ -19,7 +19,7 @@
 import type { Db, Document, Filter, OptionalUnlessRequiredId, WithId } from 'mongodb';
 import { resolveDb } from './provider';
 import { newId, type ResumeDocument } from '../../resume/schema';
-import type { ApplicationStatus } from '../../applications';
+import type { ApplicationStatus, QaEntry } from '../../applications';
 
 /**
  * Returns a connected Db. Swapped in tests; defaults to `resolveDb`, which
@@ -131,6 +131,16 @@ export interface ResumeDoc extends ResumeDocument, Scoped {
 	deletedAt: Date | null;
 }
 
+/** A point-in-time snapshot of a resume, for history + remix. */
+export interface RevisionDoc extends Scoped {
+	id: string;
+	resumeId: string;
+	rev: number;
+	doc: ResumeDocument;
+	label: string;
+	savedAt: Date;
+}
+
 /**
  * Row-scoped accessor for the many-per-user `resumes` collection. Every query
  * is filtered by `userEmail` (and, for reads, excludes soft-deleted rows);
@@ -139,6 +149,7 @@ export interface ResumeDoc extends ResumeDocument, Scoped {
  */
 class ScopedResumes {
 	private static readonly COLLECTION = 'resumes';
+	private static readonly REVISIONS = 'resume_revisions';
 
 	constructor(
 		private readonly userEmail: string,
@@ -207,6 +218,43 @@ class ScopedResumes {
 			updatedAt: now
 		});
 	}
+
+	/** Permanently remove a resume and all its revision snapshots. */
+	async hardDelete(id: string): Promise<void> {
+		const db = await this.getDbFn();
+		await db.collection<ResumeDoc>(ScopedResumes.COLLECTION).deleteOne({ id, userEmail: this.userEmail } as Filter<ResumeDoc>);
+		await db
+			.collection<RevisionDoc>(ScopedResumes.REVISIONS)
+			.deleteMany({ resumeId: id, userEmail: this.userEmail } as Filter<RevisionDoc>);
+	}
+
+	/** Snapshot the given doc as the next revision of a resume. */
+	async saveRevision(resumeId: string, doc: ResumeDocument, label: string): Promise<number> {
+		const db = await this.getDbFn();
+		const col = db.collection<RevisionDoc>(ScopedResumes.REVISIONS);
+		const existing = await col.find({ resumeId, userEmail: this.userEmail } as Filter<RevisionDoc>).toArray();
+		const rev = existing.reduce((m, r) => Math.max(m, r.rev), 0) + 1;
+		await col.insertOne({
+			id: newId(),
+			resumeId,
+			userEmail: this.userEmail,
+			rev,
+			doc,
+			label,
+			savedAt: new Date()
+		} as OptionalUnlessRequiredId<RevisionDoc>);
+		return rev;
+	}
+
+	/** All revisions of a resume, newest first. */
+	async listRevisions(resumeId: string): Promise<WithId<RevisionDoc>[]> {
+		const db = await this.getDbFn();
+		const rows = await db
+			.collection<RevisionDoc>(ScopedResumes.REVISIONS)
+			.find({ resumeId, userEmail: this.userEmail } as Filter<RevisionDoc>)
+			.toArray();
+		return rows.sort((a, b) => b.rev - a.rev);
+	}
 }
 
 /**
@@ -224,6 +272,8 @@ export interface ApplicationDoc extends Scoped {
 	/** FK → resumes.id (the resume used/intended for this job), or null. */
 	resumeId: string | null;
 	notes: string;
+	/** Saved application Q&A answers (F14 / T6). */
+	qa: QaEntry[];
 	createdAt: Date;
 	updatedAt: Date;
 	deletedAt: Date | null;
@@ -233,6 +283,8 @@ export type ApplicationInput = Pick<
 	ApplicationDoc,
 	'url' | 'title' | 'company' | 'status' | 'resumeId' | 'notes'
 >;
+
+export type ApplicationPatch = Partial<ApplicationInput & Pick<ApplicationDoc, 'qa'>>;
 
 /** Row-scoped accessor for the `applications` collection. */
 class ScopedApplications {
@@ -248,6 +300,7 @@ class ScopedApplications {
 		const now = new Date();
 		const row: ApplicationDoc = {
 			...input,
+			qa: [],
 			id: newId(),
 			userEmail: this.userEmail,
 			createdAt: now,
@@ -276,8 +329,8 @@ class ScopedApplications {
 		return rows.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
 	}
 
-	/** Patch a live application's fields (status, resume link, notes, …). */
-	async update(id: string, patch: Partial<ApplicationInput>): Promise<ApplicationDoc | null> {
+	/** Patch a live application's fields (status, resume link, notes, qa, …). */
+	async update(id: string, patch: ApplicationPatch): Promise<ApplicationDoc | null> {
 		const db = await this.getDbFn();
 		const col = db.collection<ApplicationDoc>(ScopedApplications.COLLECTION);
 		const existing = await col.findOne({ id, userEmail: this.userEmail, deletedAt: null } as Filter<ApplicationDoc>);

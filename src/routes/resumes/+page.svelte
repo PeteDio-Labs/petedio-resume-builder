@@ -39,7 +39,7 @@
 				<div class="entry" style="margin:0">
 					<div class="row">
 						<div>
-							<div style="font-weight:600">{r.title}</div>
+							<a href={`/resumes/${r.id}`} style="font-weight:600">{r.title}</a>
 							<div class="muted">{r.company || '—'}</div>
 						</div>
 						<span class="spacer"></span>

@@ -393,3 +393,26 @@ textarea {
 		transition: none !important;
 	}
 }
+
+/* Print: show only the resume preview (browser print-to-PDF export). */
+@media print {
+	.no-print {
+		display: none !important;
+	}
+	.print-area {
+		display: block !important;
+	}
+	body {
+		background: #fff !important;
+	}
+	.resume-preview {
+		max-width: none;
+		border-radius: 0;
+		padding: 0.5in;
+		box-shadow: none;
+	}
+	.page {
+		padding: 0;
+		max-width: none;
+	}
+}
