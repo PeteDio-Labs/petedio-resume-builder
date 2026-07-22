@@ -1,0 +1,7 @@
+# Preload the mongodb/bson Bun compatibility shim before any code runs, for
+# both the runtime (`bun build/index.js`) and the test runner (`bun test`).
+# See bun-preload.js for why. Remove when Bun ships the upstream bson fix.
+preload = ["./bun-preload.js"]
+
+[test]
+preload = ["./bun-preload.js"]

@@ -1,0 +1,238 @@
+<script lang="ts">
+	/**
+	 * The master-profile editor. Edits a `ResumeDocument` in place via Svelte 5
+	 * deep reactivity — the parent owns the `$state` and binds it here, then
+	 * serializes it to JSON for the save action. Used by both `/profile` and the
+	 * `/profile/import` review step.
+	 */
+	import {
+		STORY_TAGS,
+		newCertificateItem,
+		newEducationItem,
+		newProjectItem,
+		newSkillItem,
+		newStory,
+		newWorkItem,
+		type ResumeDocument,
+		type Story,
+		type StoryTag
+	} from '$lib/resume/schema';
+	import KeywordEditor from './KeywordEditor.svelte';
+	import BulletList from './BulletList.svelte';
+
+	let { profile = $bindable() }: { profile: ResumeDocument } = $props();
+
+	function toggleTag(story: Story, tag: StoryTag) {
+		const i = story.tags.indexOf(tag);
+		if (i >= 0) story.tags.splice(i, 1);
+		else story.tags.push(tag);
+	}
+</script>
+
+<div class="stack">
+	<!-- Basics -->
+	<section class="card">
+		<div class="section-head"><h2>Basics</h2></div>
+		<div class="grid-2">
+			<label class="field"><span class="field-label">Name</span>
+				<input type="text" bind:value={profile.basics.name} />
+			</label>
+			<label class="field"><span class="field-label">Headline / target title</span>
+				<input type="text" bind:value={profile.basics.label} placeholder="e.g. Talent Acquisition Partner" />
+			</label>
+			<label class="field"><span class="field-label">Email</span>
+				<input type="email" bind:value={profile.basics.email} />
+			</label>
+			<label class="field"><span class="field-label">Phone</span>
+				<input type="tel" bind:value={profile.basics.phone} />
+			</label>
+			<label class="field"><span class="field-label">City</span>
+				<input
+					type="text"
+					value={profile.basics.location?.city ?? ''}
+					oninput={(e) => {
+						profile.basics.location ??= {};
+						profile.basics.location.city = e.currentTarget.value;
+					}}
+				/>
+			</label>
+			<label class="field"><span class="field-label">Region / State</span>
+				<input
+					type="text"
+					value={profile.basics.location?.region ?? ''}
+					oninput={(e) => {
+						profile.basics.location ??= {};
+						profile.basics.location.region = e.currentTarget.value;
+					}}
+				/>
+			</label>
+			<label class="field"><span class="field-label">Website</span>
+				<input type="url" bind:value={profile.basics.url} />
+			</label>
+		</div>
+		<label class="field"><span class="field-label">Professional summary</span>
+			<textarea rows="4" bind:value={profile.basics.summary}></textarea>
+		</label>
+
+		<div class="field">
+			<span class="field-label">Profiles (LinkedIn, GitHub, …)</span>
+			{#each profile.basics.profiles ?? [] as prof, i (prof)}
+				<div class="row">
+					<input type="text" style="max-width:9rem" placeholder="Network" bind:value={prof.network} aria-label="Network" />
+					<input type="url" style="flex:1" placeholder="URL" bind:value={prof.url} aria-label="Profile URL" />
+					<button type="button" class="icon-btn" aria-label="Remove profile" onclick={() => (profile.basics.profiles ?? []).splice(i, 1)}>×</button>
+				</div>
+			{/each}
+			<button type="button" class="btn-ghost" onclick={() => (profile.basics.profiles ??= []).push({ network: '', url: '' })}>+ Add profile</button>
+		</div>
+	</section>
+
+	<!-- Work -->
+	<section class="card">
+		<div class="section-head"><h2>Work experience</h2><span class="count">{profile.work.length}</span></div>
+		{#each profile.work as w, i (w)}
+			<div class="entry">
+				<div class="entry-head">
+					<span class="title">Role {i + 1}</span>
+					<span class="spacer"></span>
+					<button type="button" class="btn-ghost btn-danger" onclick={() => profile.work.splice(i, 1)}>Remove</button>
+				</div>
+				<div class="grid-2">
+					<label class="field"><span class="field-label">Position</span><input type="text" bind:value={w.position} /></label>
+					<label class="field"><span class="field-label">Company</span><input type="text" bind:value={w.name} /></label>
+					<label class="field"><span class="field-label">Location</span><input type="text" bind:value={w.location} /></label>
+					<label class="field"><span class="field-label">URL</span><input type="url" bind:value={w.url} /></label>
+					<label class="field"><span class="field-label">Start (YYYY-MM)</span><input type="text" bind:value={w.startDate} placeholder="2022-06" /></label>
+					<label class="field"><span class="field-label">End (YYYY-MM or Present)</span><input type="text" bind:value={w.endDate} placeholder="Present" /></label>
+				</div>
+				<label class="field"><span class="field-label">Summary (optional)</span><textarea rows="2" bind:value={w.summary}></textarea></label>
+				<div class="field">
+					<span class="field-label">Highlights</span>
+					<BulletList bind:items={w.highlights} placeholder="Action + context + quantified result" />
+				</div>
+			</div>
+		{/each}
+		<button type="button" class="btn" onclick={() => profile.work.push(newWorkItem())}>+ Add role</button>
+	</section>
+
+	<!-- Education -->
+	<section class="card">
+		<div class="section-head"><h2>Education</h2><span class="count">{profile.education.length}</span></div>
+		{#each profile.education as e, i (e)}
+			<div class="entry">
+				<div class="entry-head">
+					<span class="title">Education {i + 1}</span>
+					<span class="spacer"></span>
+					<button type="button" class="btn-ghost btn-danger" onclick={() => profile.education.splice(i, 1)}>Remove</button>
+				</div>
+				<div class="grid-2">
+					<label class="field"><span class="field-label">Institution</span><input type="text" bind:value={e.institution} /></label>
+					<label class="field"><span class="field-label">Degree / study type</span><input type="text" bind:value={e.studyType} /></label>
+					<label class="field"><span class="field-label">Area / field</span><input type="text" bind:value={e.area} /></label>
+					<label class="field"><span class="field-label">Score (optional)</span><input type="text" bind:value={e.score} /></label>
+					<label class="field"><span class="field-label">Start (YYYY-MM)</span><input type="text" bind:value={e.startDate} /></label>
+					<label class="field"><span class="field-label">End (YYYY-MM)</span><input type="text" bind:value={e.endDate} /></label>
+				</div>
+			</div>
+		{/each}
+		<button type="button" class="btn" onclick={() => profile.education.push(newEducationItem())}>+ Add education</button>
+	</section>
+
+	<!-- Skills -->
+	<section class="card">
+		<div class="section-head"><h2>Skills</h2><span class="count">{profile.skills.length}</span></div>
+		{#each profile.skills as s, i (s)}
+			<div class="entry">
+				<div class="entry-head">
+					<input type="text" style="max-width:16rem" placeholder="Group name (e.g. Recruiting Stack)" bind:value={s.name} aria-label="Skill group name" />
+					<span class="spacer"></span>
+					<button type="button" class="btn-ghost btn-danger" onclick={() => profile.skills.splice(i, 1)}>Remove</button>
+				</div>
+				<KeywordEditor bind:keywords={s.keywords} placeholder="Add a skill…" />
+			</div>
+		{/each}
+		<button type="button" class="btn" onclick={() => profile.skills.push(newSkillItem())}>+ Add skill group</button>
+	</section>
+
+	<!-- Certificates -->
+	<section class="card">
+		<div class="section-head"><h2>Certifications</h2><span class="count">{profile.certificates.length}</span></div>
+		{#each profile.certificates as c, i (c)}
+			<div class="entry">
+				<div class="entry-head">
+					<span class="title">Certificate {i + 1}</span>
+					<span class="spacer"></span>
+					<button type="button" class="btn-ghost btn-danger" onclick={() => profile.certificates.splice(i, 1)}>Remove</button>
+				</div>
+				<div class="grid-2">
+					<label class="field"><span class="field-label">Name</span><input type="text" bind:value={c.name} /></label>
+					<label class="field"><span class="field-label">Issuer</span><input type="text" bind:value={c.issuer} /></label>
+					<label class="field"><span class="field-label">Date</span><input type="text" bind:value={c.date} placeholder="2024 or 2024-03" /></label>
+				</div>
+			</div>
+		{/each}
+		<button type="button" class="btn" onclick={() => profile.certificates.push(newCertificateItem())}>+ Add certificate</button>
+	</section>
+
+	<!-- Projects -->
+	<section class="card">
+		<div class="section-head"><h2>Projects</h2><span class="count">{profile.projects.length}</span></div>
+		{#each profile.projects as p, i (p)}
+			<div class="entry">
+				<div class="entry-head">
+					<span class="title">Project {i + 1}</span>
+					<span class="spacer"></span>
+					<button type="button" class="btn-ghost btn-danger" onclick={() => profile.projects.splice(i, 1)}>Remove</button>
+				</div>
+				<div class="grid-2">
+					<label class="field"><span class="field-label">Name</span><input type="text" bind:value={p.name} /></label>
+					<label class="field"><span class="field-label">URL</span><input type="url" bind:value={p.url} /></label>
+				</div>
+				<label class="field"><span class="field-label">Description</span><textarea rows="2" bind:value={p.description}></textarea></label>
+				<div class="field"><span class="field-label">Highlights</span><BulletList bind:items={p.highlights} /></div>
+				<div class="field"><span class="field-label">Keywords</span><KeywordEditor bind:keywords={p.keywords} /></div>
+			</div>
+		{/each}
+		<button type="button" class="btn" onclick={() => profile.projects.push(newProjectItem())}>+ Add project</button>
+	</section>
+
+	<!-- Story bank -->
+	<section class="card">
+		<div class="section-head">
+			<h2>Story bank</h2><span class="count">{profile.x_petedio.stories?.length ?? 0}</span>
+		</div>
+		<p class="muted" style="margin-top:-0.4rem">
+			Reusable STAR anecdotes — these power application Q&amp;A answers later. Aim for 4–6, tagged so
+			behavioral questions can auto-match.
+		</p>
+		{#each profile.x_petedio.stories ?? [] as story, i (story)}
+			<div class="entry">
+				<div class="entry-head">
+					<input type="text" style="flex:1" placeholder="Short title (e.g. Led the ATS migration)" bind:value={story.title} aria-label="Story title" />
+					<button type="button" class="btn-ghost btn-danger" onclick={() => (profile.x_petedio.stories ?? []).splice(i, 1)}>Remove</button>
+				</div>
+				<div class="field">
+					<span class="field-label">Tags</span>
+					<div class="chips">
+						{#each STORY_TAGS as tag (tag)}
+							<button
+								type="button"
+								class="toggle"
+								aria-pressed={story.tags.includes(tag)}
+								onclick={() => toggleTag(story, tag)}
+							>
+								{tag}
+							</button>
+						{/each}
+					</div>
+				</div>
+				<label class="field"><span class="field-label">Situation</span><textarea rows="2" bind:value={story.situation}></textarea></label>
+				<label class="field"><span class="field-label">Task</span><textarea rows="2" bind:value={story.task}></textarea></label>
+				<label class="field"><span class="field-label">Action</span><textarea rows="2" bind:value={story.action}></textarea></label>
+				<label class="field"><span class="field-label">Result</span><textarea rows="2" bind:value={story.result}></textarea></label>
+				<label class="field"><span class="field-label">Metrics (optional)</span><input type="text" bind:value={story.metrics} placeholder="e.g. cut time-to-hire 30%" /></label>
+			</div>
+		{/each}
+		<button type="button" class="btn" onclick={() => (profile.x_petedio.stories ??= []).push(newStory())}>+ Add story</button>
+	</section>
+</div>
