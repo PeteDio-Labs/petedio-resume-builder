@@ -57,6 +57,21 @@ In dev, demo mode also auto-signs-you-in as the demo user (`DEMO_USER`, default 
 In a **production build** demo mode only fakes data — it still requires a real Cloudflare
 Access login and never bypasses auth. Off by default.
 
+## Seeding a real master profile
+
+The app's "everything I've ever done" record. **The profile JSON is never committed** —
+this repo is public, so real work history lives outside it. Export the JSON block from the
+Linear seed doc to a local file, then:
+
+```sh
+bun run seed -- --file ~/profile.json --email someone@example.com --dry-run
+```
+
+`--dry-run` validates the file (it tolerates JSONC — the seed doc's block has `//` comments)
+and prints what *would* be written, touching nothing. Drop the flag to write, with
+`MONGODB_URI` set and `DEMO_MODE` unset. It's idempotent and row-scoped: re-running only ever
+replaces that one user's profile.
+
 ## MongoDB on Bun
 
 The `mongodb` driver's `bson` dependency calls a `node:v8` API Bun hasn't implemented yet, so
