@@ -20,7 +20,15 @@
 	import KeywordEditor from './KeywordEditor.svelte';
 	import BulletList from './BulletList.svelte';
 
-	let { profile = $bindable() }: { profile: ResumeDocument } = $props();
+	let {
+		profile = $bindable(),
+		/**
+		 * Start with every section open. The import review step needs this: its
+		 * whole promise is "check what we parsed before saving", and collapsing
+		 * the parse behind chevrons quietly breaks that.
+		 */
+		expandAll = false
+	}: { profile: ResumeDocument; expandAll?: boolean } = $props();
 
 	/**
 	 * Sections collapse (UX plan D6). Every group used to be expanded, always —
@@ -30,14 +38,15 @@
 	 * The count doubles as a completeness signal, so an empty section says so in
 	 * amber rather than hiding behind a chevron.
 	 */
+	// svelte-ignore state_referenced_locally
 	let open = $state<Record<string, boolean>>({
 		basics: true,
-		work: false,
-		education: false,
-		skills: false,
-		certificates: false,
-		projects: false,
-		stories: false
+		work: expandAll,
+		education: expandAll,
+		skills: expandAll,
+		certificates: expandAll,
+		projects: expandAll,
+		stories: expandAll
 	});
 
 	const filledBasics = $derived(

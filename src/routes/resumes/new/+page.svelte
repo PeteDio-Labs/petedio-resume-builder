@@ -91,7 +91,7 @@
 		<a href="/resumes" class="btn-ghost">← Resumes</a>
 	</div>
 
-	<h1>Tailor a resume for a job</h1>
+	<h1 style="font-size:var(--t-display)">Tailor a resume for a job</h1>
 	<p class="muted">
 		Paste a job description. We extract the ATS keywords that matter, you review them, then save a
 		draft to tailor.
