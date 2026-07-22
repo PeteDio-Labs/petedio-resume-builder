@@ -18,7 +18,7 @@
  */
 import type { Db, Document, Filter, OptionalUnlessRequiredId, WithId } from 'mongodb';
 import { resolveDb } from './provider';
-import type { ResumeDocument } from '../../resume/schema';
+import { newId, type ResumeDocument } from '../../resume/schema';
 
 /**
  * Returns a connected Db. Swapped in tests; defaults to `resolveDb`, which
@@ -118,6 +118,97 @@ class ScopedProfile {
 }
 
 /**
+ * A tailored resume row: a JSON Resume document (derived from the master
+ * profile for a specific job) plus ownership, an app-level `id`, timestamps,
+ * and a soft-delete marker. Unlike the profile there are many per user.
+ */
+export interface ResumeDoc extends ResumeDocument, Scoped {
+	id: string;
+	createdAt: Date;
+	updatedAt: Date;
+	/** null when live; a Date when soft-deleted. */
+	deletedAt: Date | null;
+}
+
+/**
+ * Row-scoped accessor for the many-per-user `resumes` collection. Every query
+ * is filtered by `userEmail` (and, for reads, excludes soft-deleted rows);
+ * writes force `userEmail` to this scope. `id` is an app-level UUID so the
+ * client never handles Mongo `_id`.
+ */
+class ScopedResumes {
+	private static readonly COLLECTION = 'resumes';
+
+	constructor(
+		private readonly userEmail: string,
+		private readonly getDbFn: DbProvider
+	) {}
+
+	async create(doc: ResumeDocument): Promise<ResumeDoc> {
+		const db = await this.getDbFn();
+		const now = new Date();
+		const row: ResumeDoc = {
+			...doc,
+			id: newId(),
+			userEmail: this.userEmail,
+			createdAt: now,
+			updatedAt: now,
+			deletedAt: null
+		};
+		await db.collection<ResumeDoc>(ScopedResumes.COLLECTION).insertOne(row as OptionalUnlessRequiredId<ResumeDoc>);
+		return row;
+	}
+
+	async get(id: string): Promise<WithId<ResumeDoc> | null> {
+		const db = await this.getDbFn();
+		return db
+			.collection<ResumeDoc>(ScopedResumes.COLLECTION)
+			.findOne({ id, userEmail: this.userEmail, deletedAt: null } as Filter<ResumeDoc>);
+	}
+
+	/** All of the user's live resumes, newest-updated first. */
+	async list(): Promise<WithId<ResumeDoc>[]> {
+		const db = await this.getDbFn();
+		const rows = await db
+			.collection<ResumeDoc>(ScopedResumes.COLLECTION)
+			.find({ userEmail: this.userEmail, deletedAt: null } as Filter<ResumeDoc>)
+			.toArray();
+		return rows.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+	}
+
+	/** Replace a live resume's content; returns null if it doesn't exist. */
+	async update(id: string, doc: ResumeDocument): Promise<ResumeDoc | null> {
+		const db = await this.getDbFn();
+		const col = db.collection<ResumeDoc>(ScopedResumes.COLLECTION);
+		const existing = await col.findOne({ id, userEmail: this.userEmail, deletedAt: null } as Filter<ResumeDoc>);
+		if (!existing) return null;
+		const row: ResumeDoc = {
+			...doc,
+			id,
+			userEmail: this.userEmail,
+			createdAt: existing.createdAt,
+			updatedAt: new Date(),
+			deletedAt: null
+		};
+		await col.replaceOne({ id, userEmail: this.userEmail } as Filter<ResumeDoc>, row);
+		return row;
+	}
+
+	async softDelete(id: string): Promise<void> {
+		const db = await this.getDbFn();
+		const col = db.collection<ResumeDoc>(ScopedResumes.COLLECTION);
+		const existing = await col.findOne({ id, userEmail: this.userEmail } as Filter<ResumeDoc>);
+		if (!existing) return;
+		const now = new Date();
+		await col.replaceOne({ id, userEmail: this.userEmail } as Filter<ResumeDoc>, {
+			...existing,
+			deletedAt: now,
+			updatedAt: now
+		});
+	}
+}
+
+/**
  * Repository entry point. Construct with the identity from
  * `event.locals.user` — never with a caller-supplied email — so a route
  * physically cannot request another user's scope.
@@ -130,7 +221,9 @@ export function createRepository(userEmail: string, getDbFn: DbProvider = resolv
 	return {
 		users: new ScopedCollection<UserDoc>('users', userEmail, getDbFn),
 		/** The user's master profile (JSON Resume). Singleton per user. */
-		profiles: new ScopedProfile(userEmail, getDbFn)
+		profiles: new ScopedProfile(userEmail, getDbFn),
+		/** The user's tailored resumes (many). */
+		resumes: new ScopedResumes(userEmail, getDbFn)
 	};
 }
 
