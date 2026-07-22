@@ -31,7 +31,7 @@
 
 <div class="stack">
 	<!-- Basics -->
-	<section class="card">
+	<section class="card" id="sec-basics">
 		<div class="section-head"><h2>Basics</h2></div>
 		<div class="grid-2">
 			<label class="field"><span class="field-label">Name</span>
@@ -88,7 +88,7 @@
 	</section>
 
 	<!-- Work -->
-	<section class="card">
+	<section class="card" id="sec-work">
 		<div class="section-head"><h2>Work experience</h2><span class="count">{profile.work.length}</span></div>
 		{#each profile.work as w, i (w)}
 			<div class="entry">
@@ -116,7 +116,7 @@
 	</section>
 
 	<!-- Education -->
-	<section class="card">
+	<section class="card" id="sec-education">
 		<div class="section-head"><h2>Education</h2><span class="count">{profile.education.length}</span></div>
 		{#each profile.education as e, i (e)}
 			<div class="entry">
@@ -139,7 +139,7 @@
 	</section>
 
 	<!-- Skills -->
-	<section class="card">
+	<section class="card" id="sec-skills">
 		<div class="section-head"><h2>Skills</h2><span class="count">{profile.skills.length}</span></div>
 		{#each profile.skills as s, i (s)}
 			<div class="entry">
@@ -155,7 +155,7 @@
 	</section>
 
 	<!-- Certificates -->
-	<section class="card">
+	<section class="card" id="sec-certificates">
 		<div class="section-head"><h2>Certifications</h2><span class="count">{profile.certificates.length}</span></div>
 		{#each profile.certificates as c, i (c)}
 			<div class="entry">
@@ -175,7 +175,7 @@
 	</section>
 
 	<!-- Projects -->
-	<section class="card">
+	<section class="card" id="sec-projects">
 		<div class="section-head"><h2>Projects</h2><span class="count">{profile.projects.length}</span></div>
 		{#each profile.projects as p, i (p)}
 			<div class="entry">
@@ -197,7 +197,7 @@
 	</section>
 
 	<!-- Story bank -->
-	<section class="card">
+	<section class="card" id="sec-stories">
 		<div class="section-head">
 			<h2>Story bank</h2><span class="count">{profile.x_petedio.stories?.length ?? 0}</span>
 		</div>
