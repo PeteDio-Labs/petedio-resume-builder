@@ -7,7 +7,7 @@
 <svelte:head><title>Resume Builder</title></svelte:head>
 
 <div class="page">
-	<h1>PeteDio Resume Builder</h1>
+	<h1 style="font-size:var(--t-display)">PeteDio Resume Builder</h1>
 
 	{#if data.demo}
 		<div class="banner info" style="margin:0.75rem 0">

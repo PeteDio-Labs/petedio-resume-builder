@@ -31,7 +31,7 @@
 		<a href="/profile" class="btn-ghost">← Master profile</a>
 	</div>
 
-	<h1>Import from a resume</h1>
+	<h1 style="font-size:var(--t-display)">Import from a resume</h1>
 	<p class="muted">
 		Paste the text of an existing resume. We'll parse it into a draft you can review and fix before
 		saving — nothing is saved until you confirm.
@@ -63,7 +63,7 @@
 		{/if}
 
 		<div style="margin-top:0.5rem">
-			<ProfileEditor bind:profile={reviewDoc} />
+			<ProfileEditor bind:profile={reviewDoc} expandAll />
 		</div>
 
 		<form

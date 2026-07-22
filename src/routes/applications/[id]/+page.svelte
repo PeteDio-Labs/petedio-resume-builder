@@ -39,7 +39,7 @@
 		<span class="chip" style="border-color:{STATUS_COLOR[data.status]}; color:{STATUS_COLOR[data.status]}">{data.status}</span>
 	</div>
 
-	<h1>{data.label}</h1>
+	<h1 style="font-size:var(--t-display)">{data.label}</h1>
 	<p class="muted">
 		{data.company || '—'} ·
 		<a href={data.url} target="_blank" rel="noopener noreferrer">job link ↗</a>

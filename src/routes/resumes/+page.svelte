@@ -13,7 +13,7 @@
 		<a href="/resumes/new" class="btn btn-primary">New from job description</a>
 	</div>
 
-	<h1>Resumes</h1>
+	<h1 style="font-size:var(--t-display)">Resumes</h1>
 	<p class="muted">Tailored drafts, one per job description. Newest first.</p>
 
 	{#if data.demo}

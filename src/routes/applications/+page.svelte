@@ -18,7 +18,7 @@
 		<a href="/" class="btn-ghost">← Home</a>
 	</div>
 
-	<h1>Job tracker</h1>
+	<h1 style="font-size:var(--t-display)">Job tracker</h1>
 	<p class="muted">Track a job by its link, set where it is in the pipeline, and link the resume you used.</p>
 
 	{#if data.demo}
