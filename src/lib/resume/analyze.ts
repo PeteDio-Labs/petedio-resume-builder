@@ -35,15 +35,27 @@ export interface AtsComponent {
 	label: string;
 	got: number;
 	max: number;
+	/**
+	 * False when there's nothing to score this against (e.g. the JD names no
+	 * certification). Inapplicable components are excluded from the total
+	 * rather than silently awarded full marks — "absent" is not "perfect".
+	 */
+	applicable: boolean;
 }
 
 export interface AtsScore {
+	/**
+	 * False when the resume has no extracted keywords at all. An ATS *match*
+	 * score is meaningless with nothing to match against, so the UI must show
+	 * "not scored" instead of a number.
+	 */
+	scored: boolean;
 	total: number;
 	components: AtsComponent[];
 	matched: string[];
 	missing: string[];
 	/** Advisory band for the UI. */
-	band: 'low' | 'good' | 'stuffed';
+	band: 'unscored' | 'low' | 'good' | 'stuffed';
 }
 
 /**
@@ -68,28 +80,26 @@ export function computeAtsScore(doc: ResumeDocument): AtsScore {
 		arr.filter(matches).reduce((s, k) => s + Math.max(k.weight, 1), 0);
 
 	const hardMax = 50;
-	const hardGot = hard.length ? Math.round((wmatch(hard) / wsum(hard)) * hardMax) : hardMax;
+	const hardGot = hard.length ? Math.round((wmatch(hard) / wsum(hard)) * hardMax) : 0;
 
 	const softMax = 15;
-	const softGot = soft.length ? Math.round((wmatch(soft) / wsum(soft)) * softMax) : softMax;
+	const softGot = soft.length ? Math.round((wmatch(soft) / wsum(soft)) * softMax) : 0;
 
 	// Title match — does the resume label/text reflect the target job title?
 	const titleMax = 15;
 	const jobTitle = (doc.x_petedio.targetJob?.title ?? '').toLowerCase();
 	const label = (doc.basics.label ?? '').toLowerCase();
-	let titleGot = titleMax;
-	if (jobTitle) {
-		const words = jobTitle.split(/\s+/).filter((w) => w.length > 2);
-		const hit = words.filter((w) => label.includes(w) || text.includes(w)).length;
-		titleGot = words.length ? Math.round((hit / words.length) * titleMax) : titleMax;
-	}
+	const titleWords = jobTitle.split(/\s+/).filter((w) => w.length > 2);
+	const titleGot = titleWords.length
+		? Math.round((titleWords.filter((w) => label.includes(w) || text.includes(w)).length / titleWords.length) * titleMax)
+		: 0;
 
 	// Education / certs — only scored when the JD actually names one.
 	const eduMax = 10;
 	const eduKws = kws.filter((k) => k.kind === 'cert' || k.kind === 'edu');
-	const eduGot = eduKws.length === 0 ? eduMax : Math.round((eduKws.filter(matches).length / eduKws.length) * eduMax);
+	const eduGot = eduKws.length ? Math.round((eduKws.filter(matches).length / eduKws.length) * eduMax) : 0;
 
-	// Searchability checklist.
+	// Searchability checklist — always applicable; it's about the resume itself.
 	const searchMax = 10;
 	let s = 0;
 	if (doc.basics.email) s += 2;
@@ -100,16 +110,23 @@ export function computeAtsScore(doc: ResumeDocument): AtsScore {
 	const searchGot = Math.min(searchMax, s);
 
 	const components: AtsComponent[] = [
-		{ label: 'Hard-skill coverage', got: hardGot, max: hardMax },
-		{ label: 'Title match', got: titleGot, max: titleMax },
-		{ label: 'Soft skills', got: softGot, max: softMax },
-		{ label: 'Education / certs', got: eduGot, max: eduMax },
-		{ label: 'Searchability', got: searchGot, max: searchMax }
+		{ label: 'Hard-skill coverage', got: hardGot, max: hardMax, applicable: hard.length > 0 },
+		{ label: 'Title match', got: titleGot, max: titleMax, applicable: titleWords.length > 0 },
+		{ label: 'Soft skills', got: softGot, max: softMax, applicable: soft.length > 0 },
+		{ label: 'Education / certs', got: eduGot, max: eduMax, applicable: eduKws.length > 0 },
+		{ label: 'Searchability', got: searchGot, max: searchMax, applicable: true }
 	];
-	const total = Math.max(0, Math.min(100, components.reduce((a, c) => a + c.got, 0)));
-	const band: AtsScore['band'] = total > 90 ? 'stuffed' : total >= 70 ? 'good' : 'low';
 
-	return { total, components, matched, missing, band };
+	// A match score needs something to match against. With no keywords the number
+	// would be meaningless (previously it read 90/100 "good" for a blank resume).
+	const scored = kws.length > 0;
+	const live = components.filter((c) => c.applicable);
+	const maxSum = live.reduce((a, c) => a + c.max, 0);
+	const gotSum = live.reduce((a, c) => a + c.got, 0);
+	const total = scored && maxSum > 0 ? Math.max(0, Math.min(100, Math.round((gotSum / maxSum) * 100))) : 0;
+	const band: AtsScore['band'] = !scored ? 'unscored' : total > 90 ? 'stuffed' : total >= 70 ? 'good' : 'low';
+
+	return { scored, total, components, matched, missing, band };
 }
 
 /* ------------------------------------------------------------------ *

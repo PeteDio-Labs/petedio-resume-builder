@@ -89,6 +89,69 @@ describe('coverLetterDeterministic', () => {
 	});
 });
 
+describe('honesty — never invent experience (UAT H2)', () => {
+	it('cover letter emits a gap marker instead of a fake achievement', () => {
+		const r = emptyProfile();
+		r.basics.name = 'Jane Doe';
+		r.x_petedio.targetJob = { title: 'PM', company: 'Acme' };
+		const cl = coverLetterDeterministic(r, 'I like your product');
+		// The old output claimed: "I delivered measurable results across the team."
+		expect(cl).not.toMatch(/I delivered measurable results/i);
+		expect(cl).toMatch(/\[add one specific achievement/i);
+	});
+
+	it('cover letter flags a missing why-line rather than inventing admiration', () => {
+		const r = emptyProfile();
+		r.x_petedio.targetJob = { title: 'PM', company: 'Acme' };
+		const cl = coverLetterDeterministic(r, '   ');
+		expect(cl).not.toMatch(/I admire/i);
+		expect(cl).toMatch(/\[add one line on why Acme specifically/i);
+	});
+
+	it('behavioral answer refuses to answer without a story', () => {
+		const a = answerQuestionDeterministic({
+			question: 'Tell me about a conflict you resolved.',
+			kind: 'behavioral',
+			context: '',
+			resume: emptyProfile(),
+			profile: emptyProfile(),
+			story: null
+		});
+		expect(a).not.toMatch(/I delivered strong, measurable results/i);
+		expect(a).toMatch(/\[no story in your story bank/i);
+	});
+
+	it('experience answer refuses when the profile is empty', () => {
+		const a = answerQuestionDeterministic({
+			question: 'Describe your experience with hiring.',
+			kind: 'experience',
+			context: '',
+			resume: emptyProfile(),
+			profile: emptyProfile(),
+			story: null
+		});
+		expect(a).toMatch(/\[your profile has no summary or work history/i);
+	});
+});
+
+describe('story relevance floor (UAT M1)', () => {
+	const s1 = { ...newStory(), title: 'Led ATS migration', tags: ['leadership' as const],
+		situation: 'The team had a broken ATS Greenhouse.', task: 'Fix it.',
+		action: 'Led the migration to Ashby end to end.', result: 'Clean cutover, zero data loss.', metrics: '' };
+	const s2 = { ...newStory(), title: 'Rescued a launch', tags: ['deadline' as const],
+		situation: 'A flagship release was two weeks out with a broken core flow.', task: 'Ship it.',
+		action: 'Cut scope and ran a hardening sprint.', result: 'Shipped on time.', metrics: '' };
+
+	it('returns null for an unrelated question (was: matched "Rescued a launch")', () => {
+		expect(matchStory('What are your salary expectations?', [s1, s2])).toBeNull();
+		expect(matchStory('Are you authorized to work in the US?', [s1, s2])).toBeNull();
+	});
+
+	it('still matches a genuinely relevant question', () => {
+		expect(matchStory('Tell me about a time you led a migration.', [s1, s2])?.id).toBe(s1.id);
+	});
+});
+
 describe('answerQuestion + matchStory', () => {
 	it('behavioral answer uses the matched story and honors the char cap', () => {
 		const r = emptyProfile();

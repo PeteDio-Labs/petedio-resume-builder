@@ -31,7 +31,22 @@
 	const score = $derived(computeAtsScore(resume));
 	const lint = $derived(lintResume(resume));
 	const bandColor = $derived(
-		score.band === 'good' ? 'var(--green)' : score.band === 'stuffed' ? 'var(--orange)' : 'var(--red)'
+		score.band === 'unscored'
+			? 'var(--label-3)'
+			: score.band === 'good'
+				? 'var(--green)'
+				: score.band === 'stuffed'
+					? 'var(--orange)'
+					: 'var(--red)'
+	);
+	const bandNote = $derived(
+		score.band === 'unscored'
+			? 'Not scored yet — extract keywords from a job description first.'
+			: score.band === 'good'
+				? 'In the target band (75–90).'
+				: score.band === 'stuffed'
+					? 'Over 90 — reads as keyword stuffing.'
+					: 'Below target — cover more keywords.'
 	);
 
 	function downloadJson() {
@@ -69,23 +84,34 @@
 	<!-- ATS score card -->
 	<div class="card" style="margin-top:1rem">
 		<div class="row" style="align-items:center; gap:1.25rem">
-			<div style="font-size:2.6rem; font-weight:700; color:{bandColor}; font-variant-numeric:tabular-nums">{score.total}</div>
+			<div style="font-size:2.6rem; font-weight:700; color:{bandColor}; font-variant-numeric:tabular-nums">
+				{score.scored ? score.total : '—'}
+			</div>
 			<div>
 				<div style="font-weight:600">ATS match score</div>
-				<div class="muted">{score.band === 'good' ? 'In the target band (75–90).' : score.band === 'stuffed' ? 'Over 90 — reads as keyword stuffing.' : 'Below target — cover more keywords.'}</div>
+				<div class="muted">{bandNote}</div>
 			</div>
 		</div>
 		<div style="margin-top:0.9rem; display:flex; flex-direction:column; gap:0.4rem">
 			{#each score.components as c (c.label)}
-				<div class="row" style="gap:0.6rem; align-items:center">
+				<div class="row" style="gap:0.6rem; align-items:center; opacity:{c.applicable ? 1 : 0.45}">
 					<span class="muted" style="width:11rem; font-size:0.82rem">{c.label}</span>
 					<div style="flex:1; height:8px; background:var(--surface-3); border-radius:99px; overflow:hidden">
-						<div style="height:100%; width:{Math.round((c.got / c.max) * 100)}%; background:var(--blue)"></div>
+						{#if c.applicable}
+							<div style="height:100%; width:{Math.round((c.got / c.max) * 100)}%; background:var(--blue)"></div>
+						{/if}
 					</div>
-					<span class="dim" style="width:3rem; text-align:right; font-variant-numeric:tabular-nums">{c.got}/{c.max}</span>
+					<span class="dim" style="width:5rem; text-align:right; font-variant-numeric:tabular-nums">
+						{c.applicable ? `${c.got}/${c.max}` : 'n/a'}
+					</span>
 				</div>
 			{/each}
 		</div>
+		{#if score.components.some((c) => !c.applicable)}
+			<p class="dim" style="font-size:0.78rem; margin:0.5rem 0 0">
+				“n/a” components aren't scored against — they're excluded from the total rather than counted as full marks.
+			</p>
+		{/if}
 		{#if score.missing.length}
 			<div style="margin-top:0.9rem">
 				<div class="muted" style="font-size:0.82rem; margin-bottom:0.35rem">Missing keywords ({score.missing.length}):</div>
