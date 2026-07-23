@@ -1,5 +1,6 @@
 <script lang="ts">
 	import Icon from '$lib/components/Icon.svelte';
+	import { STATUS_COLOR } from '$lib/applications';
 	import type { PageData } from './$types';
 
 	let { data }: { data: PageData } = $props();
@@ -15,11 +16,27 @@
 		if (s.active) bits.push(`${s.active} in play`);
 		return bits.join(' · ');
 	});
+
+	/** A date on a dashboard is a recency, not a timestamp. */
+	function ago(iso: string | null): string {
+		if (!iso) return '—';
+		const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86_400_000);
+		if (days <= 0) return 'today';
+		if (days === 1) return 'yesterday';
+		if (days < 30) return `${days}d ago`;
+		return new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
+	}
+
+	const initial = (s: string) => (s || '?').trim().charAt(0).toUpperCase();
+
+	const pipelineTotal = $derived(
+		data.stats?.byStatus.reduce((a: number, s: { count: number }) => a + s.count, 0) ?? 0
+	);
 </script>
 
 <svelte:head><title>Resume Builder</title></svelte:head>
 
-<div class="home">
+<div class="wide home">
 	<header class="home-head">
 		<h1>Resume Builder</h1>
 		{#if data.user}
@@ -34,6 +51,47 @@
 	{#if !data.user}
 		<div class="banner warn">Not provisioned. Sign in via Cloudflare Access.</div>
 	{:else}
+		<!-- Where the work stands, as four numbers you can read without stopping —
+		     the job the dim summary sentence above was doing in prose. -->
+		{#if data.stats}
+			<section class="stat-tiles" aria-label="At a glance">
+				<div class="stat-tile">
+					<span class="stat-k"><Icon name="person" size={13} /> Roles</span>
+					<span class="stat-v" class:muted-v={!data.stats.roles}>{data.stats.roles || '—'}</span>
+					<span class="stat-sub"
+						>{data.stats.stories
+							? `${data.stats.stories} ${data.stats.stories === 1 ? 'story' : 'stories'}`
+							: 'in your master profile'}</span
+					>
+				</div>
+				<div class="stat-tile">
+					<span class="stat-k"><Icon name="documents" size={13} /> Resumes</span>
+					<span class="stat-v" class:muted-v={!data.stats.resumes}>{data.stats.resumes || '—'}</span>
+					<span class="stat-sub">one tailored draft per job</span>
+				</div>
+				<div class="stat-tile">
+					<span class="stat-k"><Icon name="briefcase" size={13} /> In play</span>
+					<span class="stat-v" class:muted-v={!data.stats.active}>{data.stats.active || '—'}</span>
+					<span class="stat-sub"
+						>{data.stats.applications
+							? `of ${data.stats.applications} tracked`
+							: 'nothing tracked yet'}</span
+					>
+				</div>
+				<div class="stat-tile">
+					<span class="stat-k"><Icon name="clock" size={13} /> Last touched</span>
+					<span class="stat-v" class:muted-v={!data.stats.lastActivity}
+						>{ago(data.stats.lastActivity)}</span
+					>
+					<span class="stat-sub"
+						>{data.stats.recent[0]
+							? data.stats.recent[0].company || 'a tracked job'
+							: 'no activity yet'}</span
+					>
+				</div>
+			</section>
+		{/if}
+
 		<a class="btn btn-primary home-cta" href="/resumes/new">
 			<Icon name="sparkles" size={20} /> Tailor a resume for a job
 		</a>
@@ -41,7 +99,8 @@
 		<!-- Inset-grouped rows: destination, what's in it, how much of it there is.
 		     The old screen said the same things in three cards, eight buttons and a
 		     closing paragraph listing features. -->
-		<nav class="inset-group">
+		<div class="dash-grid">
+			<nav class="inset-group">
 			<a class="inset-row" href="/profile">
 				<span class="ico"><Icon name="person" /></span>
 				<span class="rt">
@@ -84,6 +143,61 @@
 			</a>
 		</nav>
 
+			<!-- Recent activity: the hairline-row shape the panel uses for sessions. Six fit
+			     where one card per job would show one. -->
+			{#if data.stats && data.stats.recent.length}
+				<section class="dash-card">
+					<div class="dash-head">
+						<h2>Recent activity</h2>
+						<a class="dash-note" href="/applications">All {data.stats.applications} ›</a>
+					</div>
+					<ul class="thin-rows">
+						{#each data.stats.recent as app (app.id)}
+							<li>
+								<a class="thin-row" href="/applications/{app.id}">
+									<span class="disc" style="background: {STATUS_COLOR[app.status]}"
+										>{initial(app.company || app.title)}</span
+									>
+									<span class="thin-name"
+										>{app.title || 'Untitled role'}{#if app.company}<span class="at">
+												· {app.company}</span
+											>{/if}</span
+									>
+									<span class="thin-meta">{ago(app.updatedAt)}</span>
+								</a>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+
+			<!-- Pipeline: proportions, not another count. Only stages with something in them
+			     are drawn — an empty bar says nothing worth the row. -->
+			{#if data.stats && data.stats.byStatus.length}
+				<section class="dash-card">
+					<div class="dash-head">
+						<h2>Pipeline</h2>
+						<span class="dash-note">{pipelineTotal} tracked</span>
+					</div>
+					{#each data.stats.byStatus as s (s.status)}
+						<div class="bar-row">
+							<div class="bar-top">
+								<span class="bar-name">{s.status}</span>
+								<span class="bar-val">{s.count}</span>
+							</div>
+							<div class="bar-track">
+								<div
+									class="bar-fill"
+									style="width: {(s.count / pipelineTotal) *
+										100}%; --bar-color: {STATUS_COLOR[s.status]}"
+								></div>
+							</div>
+						</div>
+					{/each}
+				</section>
+			{/if}
+		</div>
+
 		{#if data.stats === null}
 			<p class="dim footnote">Counts unavailable — the database isn't reachable right now.</p>
 		{/if}
@@ -91,10 +205,8 @@
 </div>
 
 <style>
+	/* Width now comes from .wide — a dashboard read across, not a form filled in. */
 	.home {
-		max-width: 34rem;
-		margin: 0 auto;
-		padding: 2.5rem 1.25rem max(2rem, env(safe-area-inset-bottom));
 		display: flex;
 		flex-direction: column;
 		gap: 1rem;
@@ -116,12 +228,24 @@
 		margin-top: 0.25rem;
 	}
 
+	/* At full width a stretched pill reads as a banner, not a button. */
+	@media (min-width: 901px) {
+		.home-cta {
+			max-width: 26rem;
+		}
+	}
+
 	/* iOS inset-grouped list: one surface, hairline separators, no card per row. */
+	/* Glass rather than a flat surface, so it sits in the same material as the tiles
+	   and cards beside it. */
 	.inset-group {
-		background: var(--surface-1);
+		background: var(--glass-fill);
 		border: 1px solid var(--glass-line);
 		border-radius: var(--r-md);
 		overflow: hidden;
+		backdrop-filter: blur(16px) saturate(160%);
+		-webkit-backdrop-filter: blur(16px) saturate(160%);
+		box-shadow: inset 0 1px 1px var(--glass-rim);
 	}
 
 	.inset-row {
@@ -181,6 +305,11 @@
 		color: var(--label-3);
 		font-size: 1.15rem;
 		line-height: 1;
+	}
+
+	.at {
+		color: var(--label-2);
+		font-weight: 400;
 	}
 
 	.footnote {

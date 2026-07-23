@@ -8,7 +8,7 @@
 	 * They're decorative: every row they sit in carries its own text label, so
 	 * they're hidden from assistive tech.
 	 */
-	type Name = 'person' | 'import' | 'sparkles' | 'documents' | 'briefcase';
+	type Name = 'person' | 'import' | 'sparkles' | 'documents' | 'briefcase' | 'clock';
 
 	let { name, size = 22 }: { name: Name; size?: number } = $props();
 </script>
@@ -50,5 +50,9 @@
 		<rect x="3" y="7.5" width="18" height="12.5" rx="3" />
 		<path d="M9 7.5V6a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5" />
 		<path d="M3 12.5h18" />
+	{:else if name === 'clock'}
+		<!-- recency: when a thing was last touched -->
+		<circle cx="12" cy="12" r="8.5" />
+		<path d="M12 7.2V12l3.2 1.9" />
 	{/if}
 </svg>
