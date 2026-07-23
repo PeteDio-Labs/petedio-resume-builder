@@ -140,6 +140,38 @@ actually does. If it hides via `transform`, moving it breaks the hiding.
 
 ---
 
+## CI: install with bun, build with node
+
+`bun run build` works on a dev machine and fails in CI. Vite 8 spawns workers that hit
+`node:v8 isBuildingSnapshot is not yet implemented in Bun`, and the build dies — locally
+it only ever worked because a `node` binary happened to be on PATH, so bun handed the
+build off to it. The `oven/bun` image has no node, so CI is the first place it surfaces.
+
+`deploy.yml` therefore runs two containers over the same workspace: `oven/bun` for
+`bun install --frozen-lockfile` (the lockfile is `bun.lock`), then `node:22-slim` for
+`node node_modules/vite/bin/vite.js build`. This is the concrete form of `CLAUDE.md`'s
+"app/server code stays runtime-neutral — dev runs Vite on Node under the hood".
+
+**Rule:** "works locally with bun" is not evidence the build runs under bun. Check what is
+actually on PATH before assuming a single-runtime container will reproduce it.
+
+## GitHub OIDC `sub` is not one stable format across repos
+
+The Vault CD role first failed with `claim "sub" does not match any associated bound claim
+values`, with the repo name, audience and mount all correct. The cause: this repo emits an
+**ID-qualified** subject —
+
+```
+repo:PeteDio-Labs@268380060/petedio-resume-builder@1308151391:ref:refs/heads/main
+```
+
+— while the older palworld-panel repo emits the classic `repo:OWNER/NAME:ref:…`. Compare
+with `gh api repos/{owner}/{repo}/actions/oidc/customization/sub`.
+
+**Rule:** bind CD roles on the `repository` and `ref` claims, not on a literal `sub` string.
+They carry no prefix games, and together they are exactly as tight — this repo, pushes to
+main only (a PR run carries `ref=refs/pull/N/merge` and is still excluded).
+
 ## Verify the thing, not the sign that usually accompanies it
 
 Migrating the panel's game server, the restore "worked": service active, API answering,

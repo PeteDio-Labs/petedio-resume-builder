@@ -34,6 +34,7 @@ permissions:
 env:
   ANSIBLE_IMAGE: python:3.12-slim
   BUN_IMAGE: oven/bun:1
+  NODE_IMAGE: node:22-slim
 
 jobs:
   deploy:
@@ -73,20 +74,28 @@ jobs:
             kv/data/services/resume-builder cf_access_aud | APP_CF_AUD ;
             kv/data/services/resume-builder allowed_users | APP_ALLOWED_USERS
 
-      # Build in a container so the runner needs no bun of its own. --user keeps build/
-      # owned by the runner user; without it the next step and the workspace cleanup hit
-      # root-owned files. HOME must be writable for bun's cache.
-      - name: Build the app (bun in Docker)
+      # Two runtimes, deliberately. Install with BUN (the lockfile is bun.lock), but build
+      # with NODE: vite 8 spawns workers that hit `node:v8 isBuildingSnapshot is not yet
+      # implemented in Bun` and the build dies. `bun run build` works on a dev machine only
+      # because a node binary happens to be on PATH — oven/bun has none, so CI is the first
+      # place this shows up. Matches CLAUDE.md's "app/server code stays runtime-neutral;
+      # dev runs Vite on Node under the hood".
+      #
+      # In containers so the runner needs neither toolchain of its own. --user keeps the
+      # build output owned by the runner user; without it the deploy step and the workspace
+      # cleanup hit root-owned files. HOME must be writable for the package caches.
+      - name: Install deps (bun) + build (node)
         shell: bash
         run: |
-          docker run --rm \
-            --user "$(id -u):$(id -g)" \
-            -e HOME=/tmp \
-            -v "$GITHUB_WORKSPACE/app:/app" -w /app \
-            "$BUN_IMAGE" sh -c "bun install --frozen-lockfile && bun run build"
+          APP="$GITHUB_WORKSPACE/app"
+          U="$(id -u):$(id -g)"
+          docker run --rm --user "$U" -e HOME=/tmp -v "$APP:/app" -w /app \
+            "$BUN_IMAGE" bun install --frozen-lockfile
+          docker run --rm --user "$U" -e HOME=/tmp -v "$APP:/app" -w /app \
+            "$NODE_IMAGE" node node_modules/vite/bin/vite.js build
           # The play asserts this too, but failing here says "the build broke" rather than
           # "ansible could not find a file".
-          test -f "$GITHUB_WORKSPACE/app/build/index.js" \
+          test -f "$APP/build/index.js" \
             || { echo "::error::build/index.js missing — adapter-node output path changed?"; exit 1; }
 
       - name: Deploy to resume-242 (ansible in Docker)
