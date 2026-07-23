@@ -1049,3 +1049,92 @@ a.thin-row:hover .thin-name {
 		grid-template-columns: minmax(0, 1fr);
 	}
 }
+
+/* --- controls that live inside a dense row ------------------------------
+   A tracked job needs its status changeable in place. A full-size <select>
+   per row is what made the tracker one fat card per job, so the control and
+   the state indicator become the same element: a chip you can change. */
+.chip-wrap {
+	position: relative;
+	display: inline-flex;
+	flex: none;
+}
+.chip-wrap::after {
+	content: '▾';
+	position: absolute;
+	right: 0.5rem;
+	top: 50%;
+	transform: translateY(-50%);
+	pointer-events: none;
+	font-size: 0.7rem;
+	line-height: 1;
+	opacity: 0.8;
+	color: inherit;
+}
+
+.chip-select {
+	appearance: none;
+	-webkit-appearance: none;
+	padding: 0.24rem 1.5rem 0.24rem 0.65rem;
+	border-radius: 999px;
+	border: 1px solid currentColor;
+	background: transparent;
+	color: inherit;
+	font-family: inherit;
+	font-size: var(--t-micro);
+	font-weight: 600;
+	text-transform: capitalize;
+	cursor: pointer;
+	line-height: 1.6;
+}
+.chip-select:focus-visible {
+	outline: 2px solid var(--blue);
+	outline-offset: 2px;
+}
+/* The native dropdown list is drawn by the OS and ignores the transparent
+   background, so its options need a readable surface of their own. */
+.chip-select option {
+	background: var(--surface-2);
+	color: var(--label);
+}
+
+.mini-select {
+	max-width: 13rem;
+	padding: 0.24rem 0.5rem;
+	border-radius: var(--r-xs);
+	border: 1px solid var(--glass-line);
+	background: rgba(255, 255, 255, 0.05);
+	color: var(--label-2);
+	font-family: inherit;
+	font-size: var(--t-micro);
+	cursor: pointer;
+}
+
+/* Rows can carry several controls; let them wrap on a phone rather than
+   squeezing the title to nothing. */
+.thin-row.interactive {
+	flex-wrap: wrap;
+	row-gap: 0.4rem;
+	padding: 0.7rem 0;
+}
+.thin-row .sub-link {
+	display: block;
+	font-size: var(--t-micro);
+	color: var(--label-3);
+	font-weight: 400;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* On a phone the row's controls wrap under the title. Narrowing the resume picker
+   lets the date and Remove come up onto that line instead of taking one each. */
+@media (max-width: 560px) {
+	.mini-select {
+		max-width: 8.5rem;
+	}
+	.thin-row.interactive {
+		row-gap: 0.3rem;
+		column-gap: 0.5rem;
+	}
+}
