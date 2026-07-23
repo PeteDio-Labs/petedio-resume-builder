@@ -42,6 +42,16 @@ runs standalone — same idea and shape as the panel's `PANEL_APPLIER=demo`. Sel
 factory (`provider.ts`); default OFF; in a production build it only fakes data and never
 bypasses auth. Future AI features should branch on `isDemoMode()` the same way.
 
+## Deploy
+Merging to `main` deploys to `resume-242` (`.github/workflows/deploy.yml`, self-hosted runner,
+push-to-main only). It builds in a bun container, then runs petedio-iac's
+`configure-resume-builder.yml` — the same play the operator validates by hand with
+`petedio-iac/scripts/deploy-resume-builder.sh`, which stays the manual-proof path for any
+change to the play itself. Secrets come from Vault via GitHub OIDC (`resume-builder-cd` role);
+that role lives in `vault-config`, which is **operator-applied and never touched by CI** — a
+new secret the workflow reads must be seeded in `kv/services/resume-builder` and the role's
+policy applied *before* the workflow needs it, or the run 403s.
+
 ## Gotchas
 `docs/GOTCHAS.md` — hard-won things that cost real time, several paid for on the palworld
 panel (the app this one already mirrors for `config.ts`, demo mode and the provider
