@@ -42,6 +42,14 @@ runs standalone — same idea and shape as the panel's `PANEL_APPLIER=demo`. Sel
 factory (`provider.ts`); default OFF; in a production build it only fakes data and never
 bypasses auth. Future AI features should branch on `isDemoMode()` the same way.
 
+## Gotchas
+`docs/GOTCHAS.md` — hard-won things that cost real time, several paid for on the palworld
+panel (the app this one already mirrors for `config.ts`, demo mode and the provider
+factory). Read it before UI or auth work. Highlights: Cloudflare Access only authenticates
+traffic that goes *through* Cloudflare — the origin port is reachable on the LAN, so every
+data route must gate on `locals.user` (this app does; verified); phone spacing does not
+survive being reused at desk width; `opacity: 0` alone is not a hiding mechanism in Safari.
+
 ## Source of truth
 **Linear** `PeteDillo`/`PET` — see the **Resume Builder — Planning** doc for full context,
 phased scope (P1 platform / P2+ resume-generation features), and decisions already made
