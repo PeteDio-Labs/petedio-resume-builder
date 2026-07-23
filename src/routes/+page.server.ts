@@ -2,6 +2,7 @@ import { isDemoMode } from '$lib/server/config';
 import { createRepository } from '$lib/server/db/repository';
 import { hasUsableContent } from '$lib/resume/analyze';
 import { normalizeProfile } from '$lib/resume/schema';
+import { APPLICATION_STATUSES } from '$lib/applications';
 import type { PageServerLoad } from './$types';
 
 /**
@@ -24,6 +25,28 @@ export const load: PageServerLoad = async ({ locals }) => {
 		]);
 
 		const profile = profileRow ? normalizeProfile(profileRow) : null;
+
+		// Pipeline counts, in the order a job moves through it — the dashboard draws
+		// them as proportions, so zero-count stages are dropped rather than rendered
+		// as empty bars.
+		const byStatus = APPLICATION_STATUSES.map((status) => ({
+			status,
+			count: applications.filter((a) => a.status === status).length
+		})).filter((s) => s.count > 0);
+
+		// Most recently touched applications. Dates cross the wire as ISO strings —
+		// SvelteKit serializes Date fine, but the client only needs the instant.
+		const recent = [...applications]
+			.sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt))
+			.slice(0, 6)
+			.map((a) => ({
+				id: a.id,
+				title: a.title,
+				company: a.company,
+				status: a.status,
+				updatedAt: new Date(a.updatedAt).toISOString()
+			}));
+
 		return {
 			...base,
 			stats: {
@@ -33,7 +56,10 @@ export const load: PageServerLoad = async ({ locals }) => {
 				resumes: resumes.length,
 				applications: applications.length,
 				active: applications.filter((a) => a.status === 'applied' || a.status === 'interviewing')
-					.length
+					.length,
+				byStatus,
+				recent,
+				lastActivity: recent[0]?.updatedAt ?? null
 			}
 		};
 	} catch (err) {
