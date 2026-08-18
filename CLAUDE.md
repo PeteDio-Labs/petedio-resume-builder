@@ -66,3 +66,24 @@ phased scope (P1 platform / P2+ resume-generation features), and decisions alrea
 (stack pins, architecture). Implemented so far: P1 platform scaffold, the P2 master profile
 (CRUD + paste-import parse, JSON Resume + story bank), and demo mode. Resume *tailoring* (the
 Ollama/AI features) is not built yet.
+
+## Writing style
+
+Write in **Google developer documentation style** — the standing default for prose
+in this repo: PR descriptions, commit bodies, work-item comments, docs, and code
+comments.
+
+- **Second person.** The reader is *you*; use *I* for yourself, never *we* for the reader.
+- **Active voice.** Name who does the thing.
+- **Conditions before instructions:** *To rebuild the index, run X* — not *Run X if
+  you want to rebuild the index.*
+- **Answer first**, detail after.
+- **Cut filler:** *just*, *simply*, *easy*, *please note*, *in order to*. Never call
+  something easy.
+- **No time-anchored words** in durable prose: *currently*, *new*, *now*, *latest*,
+  *existing*.
+- **Sentence case** headings; code font for paths, commands, flags, and `PET-<n>` keys.
+- Sentences under 26 words. Write *lets you* not *allows you to*, *run* not *execute*.
+
+This governs how sentences are written, not how many. Don't restyle prose you aren't
+already editing.
