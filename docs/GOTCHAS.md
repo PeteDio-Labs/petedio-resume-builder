@@ -21,6 +21,9 @@ http://192.168.50.242:8080/   -> 200      # this app, direct, no Cloudflare
 https://cv.pdlab.dev/         -> 302 …    # the same app via the edge, bounced to Access
 ```
 
+Measured 2026-07-23, before `resume-242` and the `cv` route were removed (PET-307); both
+addresses answer nothing today.
+
 **This app handles it correctly, and that is the point worth preserving.**
 `hooks.server.ts` derives identity *only* from a verified Access JWT, sets
 `locals.user = null` when there is none, and denies by default — so the direct origin
