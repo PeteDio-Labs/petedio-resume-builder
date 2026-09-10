@@ -1,12 +1,12 @@
 # petedio-resume-builder
 
-AI resume builder for Sonia. SvelteKit + Bun + MongoDB, deployed behind Cloudflare Access.
+AI resume builder for Sonia. SvelteKit + Bun + MongoDB, built to run behind Cloudflare Access — undeployed since its host was removed on 2026-08-24 (PET-307).
 
 Built so far: the **P1 platform** (Cloudflare Access auth hook, row-scoped Mongo repository,
 CI) and the **P2 master profile** — JSON Resume v1.x schema + story bank, deterministic
 paste-import parser, profile CRUD, and **demo mode** (runs with no MongoDB). Resume *tailoring*
-(the Ollama/AI features) is not built yet — see the Resume Builder — Planning doc in Linear for
-the full roadmap.
+(the Ollama/AI features) is not built yet. The planning doc is stranded in retired Linear;
+`vault/Systems/resume-builder.md` holds its decisions.
 
 ## Stack
 
@@ -61,7 +61,7 @@ Access login and never bypasses auth. Off by default.
 
 The app's "everything I've ever done" record. **The profile JSON is never committed** —
 this repo is public, so real work history lives outside it. Export the JSON block from the
-Linear seed doc to a local file, then:
+seed doc (stranded in retired Linear — copy it to the vault if you still need it) to a local file, then:
 
 ```sh
 bun run seed -- --file ~/profile.json --email someone@example.com --dry-run

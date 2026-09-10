@@ -43,8 +43,11 @@ factory (`provider.ts`); default OFF; in a production build it only fakes data a
 bypasses auth. Future AI features should branch on `isDemoMode()` the same way.
 
 ## Deploy
-Merging to `main` deploys to `resume-242` (`.github/workflows/deploy.yml`, self-hosted runner,
-push-to-main only). It builds in a bun container, then runs petedio-iac's
+⚠ **The app has no host.** `resume-242` and `cv.pdlab.dev` were removed on 2026-08-24
+(PET-307); no inventory defines the `resume` group, so `deploy.yml` goes green having
+deployed nothing (PET-387 decides rebuild or retire). Declare a host in petedio-iac before
+reading a green run as a deploy. When there is one: merging to `main` runs
+`.github/workflows/deploy.yml` (self-hosted runner, push-to-main only). It builds in a bun container, then runs petedio-iac's
 `configure-resume-builder.yml` — the same play the operator validates by hand with
 `petedio-iac/scripts/deploy-resume-builder.sh`, which stays the manual-proof path for any
 change to the play itself. Secrets come from Vault via GitHub OIDC (`resume-builder-cd` role);
@@ -61,7 +64,7 @@ data route must gate on `locals.user` (this app does; verified); phone spacing d
 survive being reused at desk width; `opacity: 0` alone is not a hiding mechanism in Safari.
 
 ## Source of truth
-**Linear** `PeteDillo`/`PET` — see the **Resume Builder — Planning** doc for full context,
+**Plane** (project `PET`) tracks work items. The **Resume Builder — Planning** doc is stranded in retired Linear; `vault/Systems/resume-builder.md` holds its decisions. It had the full context,
 phased scope (P1 platform / P2+ resume-generation features), and decisions already made
 (stack pins, architecture). Implemented so far: P1 platform scaffold, the P2 master profile
 (CRUD + paste-import parse, JSON Resume + story bank), and demo mode. Resume *tailoring* (the
