@@ -14,14 +14,19 @@
 #   installed here: the play runs `bun install --production` on the target, because native
 #   modules built on the runner would be the wrong architecture.
 #
-#   Runs ONLY on push to main (never on PRs): PR-controlled code must never touch the
-#   self-hosted runner. Requires the `resume-builder-cd` Vault OIDC role (petedio-iac,
-#   vault-config — operator-applied, NOT applied by CI); without it the vault-action login 403s.
+#   Runs on demand only (PET-387). resume-242 was destroyed on 2026-08-24 (PET-307), and
+#   from then until this change every merge ran this deploy against an inventory that
+#   named no host: ansible-playbook printed "skipping: no hosts matched", an empty recap,
+#   and exit 0, so the run went green having deployed nothing. Declare the host in
+#   petedio-iac (a .tf plus an inventory file for the `resume` group), then put `push:
+#   branches: [main]` back. The zero-hosts guard in the deploy step stays either way.
+#   Never on PRs: PR-controlled code must never touch the self-hosted runner. Requires the
+#   `resume-builder-cd` Vault OIDC role (petedio-iac, vault-config — operator-applied, NOT
+#   applied by CI); without it the vault-action login 403s.
 name: deploy
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: deploy-resume-builder # serialize deploys against resume-242
@@ -129,4 +134,7 @@ jobs:
             "apt-get update -q >/dev/null && apt-get install -y -q openssh-client >/dev/null && \
              pip install -q ansible-core && \
              ansible-galaxy collection install community.general && \
+             if ansible-playbook -i inventory/hosts.yml playbooks/configure-resume-builder.yml --list-hosts | grep -q 'hosts (0):'; then \
+               echo '::error title=deploy::No hosts matched. No inventory file defines the resume group (PET-307, PET-387).'; exit 1; \
+             fi && \
              ansible-playbook -i inventory/hosts.yml playbooks/configure-resume-builder.yml -e @/ci/evars.json"
