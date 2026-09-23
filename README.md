@@ -1,6 +1,6 @@
 # petedio-resume-builder
 
-AI resume builder for Sonia. SvelteKit + Bun + MongoDB, built to run behind Cloudflare Access — undeployed since its host was removed on 2026-08-24 (PET-307).
+AI resume builder for Sonia. SvelteKit + Bun + MongoDB, built to run behind Cloudflare Access — undeployed since its host was removed on 2026-08-24 (PET-307). `deploy.yml` runs on demand only and refuses when the inventory matches no host (PET-387); declare the host in petedio-iac and restore the push trigger to deploy on merge again.
 
 Built so far: the **P1 platform** (Cloudflare Access auth hook, row-scoped Mongo repository,
 CI) and the **P2 master profile** — JSON Resume v1.x schema + story bank, deterministic
